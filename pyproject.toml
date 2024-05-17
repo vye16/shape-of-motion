@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools==65.6.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flow3d"
+version = "0.0.0"
+authors = []
+requires-python = ">=3.10"
+dependencies = [
+  "torch==2.0.1",
+  "gsplat==0.1.7",
+  "viser",
+  "opencv-python",
+  "imageio",
+  "imageio-ffmpeg",
+  "matplotlib",
+  "tensorboard",
+  "scikit-learn",
+  "jaxtyping",
+  "roma",
+  "lightning[pytorch-extra]",
+  "ninja",
+  "pytorch-msssim",
+  "fsspec",
+  "kornia",
+  "loguru"
+]
+
+[project.optional-dependencies]
+dev = ["black", "isort", "ipdb", "pytest", 'line_profiler']
+
+[tool.setuptools.packages.find]
+include = ["flow3d"]
+
+[tool.isort]
+profile = "black"

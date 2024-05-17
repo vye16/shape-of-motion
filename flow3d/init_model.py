@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transforms import cont_6d_to_rmat
+from flow3d.transforms import cont_6d_to_rmat
 
 
 class InitMotionParams(nn.Module):
@@ -10,10 +10,10 @@ class InitMotionParams(nn.Module):
         super().__init__()
         self.num_frames = motion_rots.shape[1]
         self.num_gaussians = means.shape[0]
-        self.register_parameter("motion_rots", nn.Parameter(motion_rots))
-        self.register_parameter("motion_transls", nn.Parameter(motion_transls))
-        self.register_parameter("motion_coefs", nn.Parameter(motion_coefs))
-        self.register_parameter("means", nn.Parameter(means))
+        self.motion_rots = nn.Parameter(motion_rots)
+        self.motion_transls = nn.Parameter(motion_transls)
+        self.motion_coefs = nn.Parameter(motion_coefs)
+        self.means = nn.Parameter(means)
 
     def compute_transforms(self, ts: torch.Tensor) -> torch.Tensor:
         """

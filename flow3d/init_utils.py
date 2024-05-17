@@ -6,22 +6,21 @@ import numpy as np
 from pytorch3d.ops import sample_farthest_points
 import roma
 import torch
-import torch.nn as nn
 from tqdm import tqdm
 from loguru import logger as guru
 import torch.nn.functional as F
 from typing import Literal
 
 from viser import ViserServer
-from loss_utils import masked_l1_loss, get_weights_for_procrustes, knn
-from init_model import InitMotionParams
-from tensor_dataclass import (
+from flow3d.loss_utils import masked_l1_loss, get_weights_for_procrustes, knn
+from flow3d.init_model import InitMotionParams
+from flow3d.tensor_dataclass import (
     GaussianParams,
     StaticObservations,
     TrackObservations,
 )
-from transforms import cont_6d_to_rmat, rt_to_mat4, solve_procrustes
-from vis_utils import (
+from flow3d.transforms import cont_6d_to_rmat, rt_to_mat4, solve_procrustes
+from flow3d.vis_utils import (
     draw_keypoints_video,
     project_2d_tracks,
 )

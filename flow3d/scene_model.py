@@ -8,8 +8,8 @@ import torch.nn.functional as F
 
 from gsplat.project_gaussians import project_gaussians
 from gsplat.rasterize import rasterize_gaussians
-from transforms import cont_6d_to_rmat
-from tensor_dataclass import GaussianParams
+from flow3d.transforms import cont_6d_to_rmat
+from flow3d.tensor_dataclass import GaussianParams
 
 
 class SceneModel(nn.Module):

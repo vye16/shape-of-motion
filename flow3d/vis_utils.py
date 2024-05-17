@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import torch.nn.functional as F
 
 
 def project_2d_tracks(tracks_3d_w, Ks, T_cw, return_depth=False):

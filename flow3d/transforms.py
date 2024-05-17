@@ -1,4 +1,4 @@
-from typing import Literal, overload
+from typing import Literal
 
 import roma
 import torch

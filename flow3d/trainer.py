@@ -1,20 +1,20 @@
 import functools
 import time
-from typing import Literal, cast
+from typing import cast
 from nerfview.utils import CameraState, with_view_lock
 import numpy as np
 from loguru import logger as guru
 from pytorch_msssim import SSIM
 import torch
 import torch.nn.functional as F
-from loss_utils import compute_gradient_loss, masked_l1_loss
 from pytorch_lightning import LightningModule
-from metrics import PCK, mLPIPS, mPSNR, mSSIM
-from scene_model import SceneModel
-from configs import SceneLRConfig, SceneLossesConfig, SceneOptimizerConfig
+from flow3d.loss_utils import compute_gradient_loss, masked_l1_loss
+from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
+from flow3d.scene_model import SceneModel
+from flow3d.configs import SceneLRConfig, SceneLossesConfig, SceneOptimizerConfig
 
 
-class Trainer(LightningModule):
+class SceneModule(LightningModule):
     def __init__(
         self,
         model: SceneModel,
