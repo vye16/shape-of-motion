@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 import os
 import os.path as osp
@@ -15,24 +16,44 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset, default_collate
 from tqdm import tqdm
 
 from flow3d.transforms import rt_to_mat4
-from flow3d.utils import (
-    get_colmap_camera_params,
+from flow3d.colmap_utils import get_colmap_camera_params
+from flow3d.data_utils import (
     masked_median_blur,
     normalize_coords,
     parse_tapir_track_info,
+    SceneNormDict,
+    normal_from_depth_image,
 )
 
-from .utils import SceneNormDict, load_sam_features, normal_from_depth_image
+
+@dataclass
+class DataConfig:
+    data_dir: str
+    start: int=0
+    end: int=-1
+    split: Literal["train", "val"]="train"
+    depth_type: Literal[
+        "midas",
+        "depth_anything",
+        "lidar",
+        "depth_anything_colmap",
+    ] = "depth_anything_colmap"
+    camera_type: Literal["original", "refined"] = "refined"
+    use_median_filter: bool = False
+    num_targets_per_frame: int = 1
+    scene_norm_dict: SceneNormDict | None = None
+    load_from_cache: bool = False
+    skip_load_imgs: bool = False
 
 
 class iPhoneDataset(Dataset):
     def __init__(
         self,
         data_dir: str,
-        split: Literal["train", "val"] = "train",
         start: int = 0,
         end: int = -1,
         factor: int = 1,
+        split: Literal["train", "val"] = "train",
         depth_type: Literal[
             "midas",
             "depth_anything",
@@ -50,6 +71,7 @@ class iPhoneDataset(Dataset):
         super().__init__(**kwargs)
 
         self.data_dir = data_dir
+        self.training = split == "train"
         self.split = split
         self.factor = factor
         self.start = start
@@ -62,7 +84,6 @@ class iPhoneDataset(Dataset):
         self.load_from_cache = load_from_cache
         self.cache_dir = osp.join(data_dir, "flow3d_preprocessed", "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
-
 
         # Test if the current data has validation set.
         with open(osp.join(data_dir, "splits", "val.json")) as f:
@@ -238,17 +259,17 @@ class iPhoneDataset(Dataset):
                 )
 
                 # Load sam features.
-                sam_feat_dir = osp.join(
-                    data_dir, f"flow3d_preprocessed/sam_features/{factor}x"
-                )
-                assert osp.exists(sam_feat_dir), f"SAM features not exist!"
-                sam_features, original_size, input_size = load_sam_features(
-                    sam_feat_dir, self.frame_names
-                )
-                guru.info(f"{sam_features.shape=} {original_size=} {input_size=}")
-                self.sam_features = sam_features
-                self.sam_original_size = original_size
-                self.sam_input_size = input_size
+                # sam_feat_dir = osp.join(
+                #     data_dir, f"flow3d_preprocessed/sam_features/{factor}x"
+                # )
+                # assert osp.exists(sam_feat_dir), f"SAM features not exist!"
+                # sam_features, original_size, input_size = load_sam_features(
+                #     sam_feat_dir, self.frame_names
+                # )
+                # guru.info(f"{sam_features.shape=} {original_size=} {input_size=}")
+                # self.sam_features = sam_features
+                # self.sam_original_size = original_size
+                # self.sam_input_size = input_size
             else:
                 # Load covisible masks.
                 self.covisible_masks = (
@@ -317,10 +338,7 @@ class iPhoneDataset(Dataset):
             )
 
     def __len__(self):
-        if self.training:
-            return super().__len__()
-        else:
-            return self.imgs.shape[0]
+        return self.imgs.shape[0]
 
     def get_w2cs(self) -> torch.Tensor:
         return self.w2cs
@@ -328,8 +346,8 @@ class iPhoneDataset(Dataset):
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
 
-    def get_sam_features(self) -> list[torch.Tensor, tuple[int, int], tuple[int, int]]:
-        return self.sam_features, self.sam_original_size, self.sam_input_size
+    # def get_sam_features(self) -> list[torch.Tensor, tuple[int, int], tuple[int, int]]:
+    #     return self.sam_features, self.sam_original_size, self.sam_input_size
 
     def get_tracks_3d(
         self,
@@ -568,7 +586,7 @@ class iPhoneDataset(Dataset):
     def get_video_dataset(self) -> Dataset:
         return iPhoneDatasetVideoView(self)
 
-    def fetch_data(self, index: int):
+    def __getitem__(self, index: int):
         if self.training:
             index = np.random.randint(0, self.num_frames)
         data = {
@@ -738,7 +756,7 @@ class iPhoneDatasetVideoView(Dataset):
             "masks": self.dataset.masks[index],
         }
 
-
+"""
 class iPhoneDataModule(BaseDataModule[iPhoneDataset]):
     def __init__(
         self,
@@ -819,3 +837,4 @@ class iPhoneDataModule(BaseDataModule[iPhoneDataset]):
 
     def val_dataloader(self) -> list[DataLoader]:
         return [DataLoader(self.val_dataset), DataLoader(self.keypoint_dataset)]
+        """

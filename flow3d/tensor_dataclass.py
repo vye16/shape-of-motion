@@ -60,37 +60,6 @@ class TensorDataclass:
 
 
 @dataclass
-class GaussianParams(TensorDataclass):
-    means: torch.Tensor
-    quats: torch.Tensor
-    scales: torch.Tensor
-    colors: torch.Tensor
-    opacities: torch.Tensor
-    scene_center: torch.Tensor | None = None
-    scene_scale: float = 1.0
-
-    def check_sizes(self) -> bool:
-        dims = self.means.shape[:-1]
-        leading_dims_match = (
-            self.quats.shape[:-1] == dims
-            and self.scales.shape[:-1] == dims
-            and self.colors.shape[:-1] == dims
-            and self.opacities.shape[:-1] == dims
-        )
-        dims_correct = (
-            self.means.shape[-1] == 3
-            and (self.quats.shape[-1] == 4)
-            and (self.scales.shape[-1] == 3)
-            and (self.colors.shape[-1] == 3)
-            and (self.opacities.shape[-1] == 1)
-        )
-        return leading_dims_match and dims_correct
-
-    def batch_size(self) -> int:
-        return self.means.shape[0]
-
-
-@dataclass
 class TrackObservations(TensorDataclass):
     xyz: torch.Tensor
     visibles: torch.Tensor

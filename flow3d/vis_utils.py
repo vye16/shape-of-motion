@@ -3,6 +3,27 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
+from viser import ViserServer
+
+
+class Singleton(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+
+class VisManager(metaclass=Singleton):
+    _servers = {}
+
+
+def get_server(port=8890) -> ViserServer:
+    manager = VisManager()
+    if port not in manager._servers:
+        manager._servers[port] = ViserServer(port=port)
+    return manager._servers[port]
 
 
 def project_2d_tracks(tracks_3d_w, Ks, T_cw, return_depth=False):

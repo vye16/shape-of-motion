@@ -1,0 +1,17 @@
+viser
+opencv-python
+imageio
+imageio-ffmpeg
+matplotlib
+tensorboard
+scikit-learn
+jaxtyping
+roma
+ninja
+pytorch-msssim
+fsspec
+kornia
+loguru
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.2.0
+torchvision==0.17.0

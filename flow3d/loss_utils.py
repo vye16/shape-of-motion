@@ -114,3 +114,45 @@ def get_weights_for_procrustes(clusters, visibilities=None):
     invalid |= torch.isnan(weights)
     weights[invalid] = 0
     return weights
+
+
+def compute_z_acc_loss(means_ts_nb: torch.Tensor, w2cs: torch.Tensor):
+    """
+    :param means_ts (G, 3, B, 3)
+    :param w2cs (B, 4, 4)
+    return (float)
+    """
+    camera_center_t = torch.linalg.inv(w2cs)[:, :3, 3]  # (B, 3)
+    ray_dir = F.normalize(
+        means_ts_nb[:, 1] - camera_center_t, p=2.0, dim=-1
+    )  # [G, B, 3]
+    # acc = 2 * means[:, 1] - means[:, 0] - means[:, 2]  # [G, B, 3]
+    # acc_loss = (acc * ray_dir).sum(dim=-1).abs().mean()
+    acc_loss = (
+        ((means_ts_nb[:, 1] - means_ts_nb[:, 0]) * ray_dir).sum(dim=-1) ** 2
+    ).mean() + (
+        ((means_ts_nb[:, 2] - means_ts_nb[:, 1]) * ray_dir).sum(dim=-1) ** 2
+    ).mean()
+    return acc_loss
+
+
+def compute_se3_smoothness_loss(
+    rots: torch.Tensor,
+    transls: torch.Tensor,
+    weight_rot: float = 1.0,
+    weight_transl: float = 2.0,
+):
+    """
+    central differences
+    :param motion_transls (K, T, 3)
+    :param motion_rots (K, T, 6)
+    """
+    r_accel_loss = compute_accel_loss(rots)
+    t_accel_loss = compute_accel_loss(transls)
+    return r_accel_loss * weight_rot + t_accel_loss * weight_transl
+
+
+def compute_accel_loss(transls):
+    accel = 2 * transls[:, 1:-1] - transls[:, :-2] - transls[:, 2:]
+    loss = accel.norm(dim=-1).mean()
+    return loss
