@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass
 import warnings
+from tqdm import tqdm
 
 import tyro
 import os
@@ -33,14 +34,13 @@ class TrainConfig:
     num_fg: int = 40_000
     num_bg: int = 0
     num_motion_bases: int = 10
+    num_epochs: int = 1000
     port: int = 8890
     batch_size: int = 8
     num_dl_workers: int = 4
 
 
-def main(
-    cfg: TrainConfig,
-):
+def main(cfg: TrainConfig):
 
     train_dataset = iPhoneDataset(**asdict(cfg.data_cfg))
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
@@ -82,10 +82,12 @@ def main(
     trainer = Trainer(
         model, device, lr_cfg, loss_cfg, optim_cfg, work_dir=cfg.work_dir, port=cfg.port
     )
-    for batch in train_loader:
-        batch = to_device(batch, device)
-        loss = trainer.train_step(batch)
-        guru.info(f"Loss: {loss}")
+    guru.info("Starting training")
+    for _ in (pbar := tqdm(range(cfg.num_epochs))):
+        for batch in train_loader:
+            batch = to_device(batch, device)
+            loss = trainer.train_step(batch)
+            pbar.set_description(f"Loss: {loss}")
 
 
 def to_device(batch, device):

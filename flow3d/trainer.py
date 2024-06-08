@@ -2,7 +2,7 @@ from dataclasses import asdict
 import functools
 import time
 from typing import cast
-from nerfview.utils import CameraState, with_view_lock
+from nerfview import CameraState, Viewer
 import numpy as np
 from loguru import logger as guru
 from pytorch_msssim import SSIM
@@ -18,6 +18,7 @@ from flow3d.loss_utils import (
 from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
 from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
+from flow3d.vis_utils import get_server
 
 
 class Trainer:
@@ -55,6 +56,11 @@ class Trainer:
         self.optimizers, self.scheduler = self.configure_optimizers()
         self.writer = SummaryWriter(log_dir=work_dir)
         self.global_step = 0
+
+        self.viewer = None
+        if port is not None:
+            server = get_server(port=port)
+            self.viewer = Viewer(server, render_fn=self.render_fn)
 
         # metrics
         self.ssim = SSIM(data_range=1.0, size_average=True, channel=3)
@@ -94,12 +100,17 @@ class Trainer:
         w2c = torch.linalg.inv(
             torch.from_numpy(camera_state.c2w.astype(np.float32)).to(self.device)
         )
-        img = self.model.render(camera_state.extras["t"], w2c[None], K[None], img_wh)[
-            "img"
-        ][0]
+        t = 0
+        self.model.training = False
+        img = self.model.render(t, w2c[None], K[None], img_wh)["img"][0]
         return (img.cpu().numpy() * 255.0).astype(np.uint8)
 
     def train_step(self, batch):
+        if self.viewer is not None:
+            while self.viewer.state.status == "paused":
+                time.sleep(0.1)
+            self.viewer.lock.acquire()
+
         loss, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
         loss.backward()
 
@@ -110,9 +121,16 @@ class Trainer:
             sched.step()
 
         self.run_control_steps()
+
+        if self.viewer is not None:
+            self.viewer.lock.release()
+            self.viewer.state.num_train_rays_per_sec = num_rays_per_sec
+            self.viewer.update(self.global_step, num_rays_per_step)
+
         return loss.item()
 
     def compute_losses(self, batch):
+        self.model.training = True
         B = batch["imgs"].shape[0]
         W, H = img_wh = batch["imgs"].shape[2:0:-1]
         N = batch["target_ts"][0].shape[0]
@@ -420,7 +438,7 @@ class Trainer:
         )
 
         # Log stats.
-        self.log_dict( stats)
+        self.log_dict(stats)
         self.global_step += 1
 
         return loss, num_rays_per_step, num_rays_per_sec
@@ -429,46 +447,15 @@ class Trainer:
         for k, v in stats.items():
             self.writer.add_scalar(k, v, self.global_step)
 
-    # def compute_z_acc_loss(self, ts: torch.Tensor):
-    #     """
-    #     :param ts: [B]
-    #     :param w2cs: [B, 4, 4]
-    #     """
-    #     num_frames = self.model.num_frames
-    #     ts = torch.clamp(ts, min=1, max=num_frames - 2)
-    #     ts_neighbors = torch.cat((ts - 1, ts, ts + 1))
-    #     means, _ = self.model.compute_poses_fg(ts_neighbors)  # [G, 3n, 3]
-    #     means = means.reshape(means.shape[0], 3, -1, 3)  # [G, 3, n, 3]
-    #     camera_center_t = torch.linalg.inv(self.model.w2cs[ts])[:, :3, 3]
-    #     ray_dir = F.normalize(means[:, 1] - camera_center_t, p=2.0, dim=-1)  # [G, n, 3]
-    #     # acc = 2 * means[:, 1] - means[:, 0] - means[:, 2]  # [G, n, 3]
-    #     # acc_loss = (acc * ray_dir).sum(dim=-1).abs().mean()
-    #     acc_loss = (((means[:, 1] - means[:, 0]) * ray_dir).sum(dim=-1) ** 2).mean() + (
-    #         ((means[:, 2] - means[:, 1]) * ray_dir).sum(dim=-1) ** 2
-    #     ).mean()
-    #     return acc_loss
-    #
-    # def compute_motion_bases_smoothness_loss(
-    #     self, weight_rot: float = 1.0, weight_transl: float = 2.0
-    # ):
-    #     small_acc_loss = 0.0
-    #     rots = self.model.motion_rots
-    #     small_accel_loss_q = 2 * rots[:, 1:-1] - rots[:, :-2] - rots[:, 2:]
-    #     small_acc_loss += small_accel_loss_q.norm(dim=-1).mean() * weight_rot
-    #
-    #     transls = self.model.motion_transls
-    #     small_accel_loss_t = 2 * transls[:, 1:-1] - transls[:, :-2] - transls[:, 2:]
-    #     small_acc_loss += small_accel_loss_t.norm(dim=-1).mean() * weight_transl
-    #     return small_acc_loss
-
     def run_control_steps(self):
         global_step = self.global_step
         # Adaptive gaussian control.
         cfg = self.optim_cfg
         num_frames = self.model.num_frames
-        self._prepare_control_step()
+        ready = self._prepare_control_step()
         if (
-            global_step > cfg.warmup_steps
+            ready
+            and global_step > cfg.warmup_steps
             and global_step % cfg.control_every == 0
             and global_step < cfg.stop_control_steps
         ):
@@ -487,16 +474,18 @@ class Trainer:
             self._visible_num_steps = None
             self._max_normalized_radii = None
 
-    @with_view_lock
     @torch.no_grad()
-    def _prepare_control_step(self):
+    def _prepare_control_step(self) -> bool:
         # Prepare for adaptive gaussian control based on the current stats.
-        assert (
+        if not (
             self.model._current_radii is not None
             and self.model._current_xys is not None
             and self._batched_xys is not None
             and self._batched_radii is not None
-        )
+        ):
+            guru.warning("Skipping control step preparation")
+            return False
+
         batch_size = len(self._batched_xys)
         for _current_xys, _current_radii, _current_img_wh in zip(
             self._batched_xys, self._batched_radii, self._batched_img_wh
@@ -523,8 +512,8 @@ class Trainer:
                 self._max_normalized_radii[visible_masks],
                 _current_radii[visible_masks] / max(_current_img_wh),
             )
+        return True
 
-    @with_view_lock
     @torch.no_grad()
     def _densify_control_step(self, global_step):
         assert (
