@@ -58,7 +58,7 @@ class LossesConfig:
 class OptimizerConfig:
     max_steps: int = 5000
     ## Adaptive gaussian control
-    warmup_steps: int = 500
+    warmup_steps: int = 200
     control_every: int = 100
     reset_opacity_every_n_controls: int = 30
     stop_control_by_screen_steps: int = 4000

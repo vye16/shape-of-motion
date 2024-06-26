@@ -112,6 +112,8 @@ class Trainer:
             self.viewer.lock.acquire()
 
         loss, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
+        if loss.isnan():
+            import ipdb; ipdb.set_trace()
         loss.backward()
 
         for opt in self.optimizers.values():
@@ -125,7 +127,8 @@ class Trainer:
         if self.viewer is not None:
             self.viewer.lock.release()
             self.viewer.state.num_train_rays_per_sec = num_rays_per_sec
-            self.viewer.update(self.global_step, num_rays_per_step)
+            if self.viewer.mode == "training":
+                self.viewer.update(self.global_step, num_rays_per_step)
 
         return loss.item()
 
@@ -590,7 +593,7 @@ class Trainer:
             dim=0,
         )
         guru.info(
-            f"Splitted {should_split.sum().item()} gaussians, "
+            f"Split {should_split.sum().item()} gaussians, "
             f"Duplicated {should_dup.sum().item()} gaussians, "
             f"{self.model.num_gaussians} gaussians left"
         )
@@ -601,7 +604,7 @@ class Trainer:
         cfg = self.optim_cfg
         opacities = self.model.get_opacities_all()
         device = opacities.device
-        is_opacity_too_small = (opacities < cfg.cull_opacity_threshold)[:, 0]
+        is_opacity_too_small = (opacities < cfg.cull_opacity_threshold)
         is_radius_too_big = torch.zeros_like(is_opacity_too_small, dtype=torch.bool)
         is_scale_too_big = torch.zeros_like(is_opacity_too_small, dtype=torch.bool)
         cull_scale_threshold = (
@@ -611,7 +614,7 @@ class Trainer:
         cull_scale_threshold[num_fg:] *= self.model.bg_scene_scale
         if global_step > self.reset_opacity_every:
             scales = self.model.get_scales_all()
-            is_scale_too_big = scales.max(dim=-1)[0] > cull_scale_threshold
+            is_scale_too_big = scales.amax(dim=-1) > cull_scale_threshold
             if global_step < cfg.stop_control_by_screen_steps:
                 assert self._max_normalized_radii is not None
                 is_radius_too_big = (

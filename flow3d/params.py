@@ -87,7 +87,7 @@ class GaussianParams(nn.Module):
         updated_params = {}
         for name, x in self.params.items():
             x_dup = x[should_dup]
-            x_split = x[should_split].repeat(2, 1)
+            x_split = x[should_split].repeat([2] + [1] * (x.ndim - 1))
             if name == "scales":
                 x_split -= math.log(1.6)
             x_new = nn.Parameter(torch.cat([x[~should_split], x_dup, x_split], dim=0))
