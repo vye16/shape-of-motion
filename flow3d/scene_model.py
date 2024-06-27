@@ -185,7 +185,7 @@ class SceneModel(nn.Module):
             mask_values = torch.zeros((self.num_gaussians, 1), device=device)
             mask_values[: self.num_fg_gaussians] = 1.0
             colors_override = torch.cat([colors_override, mask_values], dim=-1)
-            bg_color = torch.cat([bg_color, torch.tensor([0.0], device=device)], dim=-1)
+            bg_color = torch.cat([bg_color, torch.zeros(C, 1, device=device)], dim=-1)
             ds_expected["mask"] = 1
 
         B = 0
@@ -203,7 +203,7 @@ class SceneModel(nn.Module):
             d_track = track_3d_vals.shape[-1]
             colors_override = torch.cat([colors_override, track_3d_vals], dim=-1)
             bg_color = torch.cat(
-                [bg_color, torch.zeros(track_3d_vals.shape[-1], device=device)], dim=-1
+                [bg_color, torch.zeros(C, track_3d_vals.shape[-1], device=device)], dim=-1
             )
             ds_expected["tracks_3d"] = d_track
 
@@ -220,6 +220,7 @@ class SceneModel(nn.Module):
             scales=scales,
             opacities=opacities,
             colors=colors_override,
+            backgrounds=bg_color,
             viewmats=w2cs,  # [C, 4, 4]
             Ks=Ks,  # [C, 3, 3]
             width=W,

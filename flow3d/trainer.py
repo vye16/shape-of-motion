@@ -239,7 +239,7 @@ class Trainer:
         self._batched_radii = []
         self._batched_img_wh = []
         for i in range(B):
-            bg_color = torch.ones(3, device=device)
+            bg_color = torch.ones(1, 3, device=device)
             rendered = self.model.render(
                 ts[i].item(),
                 w2cs[None, i],
@@ -272,13 +272,13 @@ class Trainer:
         # (B, H, W, N, *).
         rendered_all = {
             key: (
-                torch.cat([i[key] for i in rendered_all], dim=0)
+                torch.cat([out_dict[key] for out_dict in rendered_all], dim=0)
                 if rendered_all[0][key] is not None
                 else None
             )
             for key in rendered_all[0]
         }
-        bg_colors = torch.stack(bg_colors)
+        bg_colors = torch.cat(bg_colors, dim=0)
 
         # Compute losses.
         # (B * N).
