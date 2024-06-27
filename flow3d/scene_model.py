@@ -231,7 +231,7 @@ class SceneModel(nn.Module):
         # Populate the current data for adaptive gaussian control.
         if self.training:
             self._current_xys = info["means2d"]
-            self._current_radii = info["radii"][0]
+            self._current_radii = info["radii"]
             self._current_img_wh = img_wh
             # We want to be able to access to xys' gradients later in a
             # torch.no_grad context.
