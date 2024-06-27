@@ -111,7 +111,7 @@ class GaussianParams(nn.Module):
         reset all opacities to new_val
         """
         self.params["opacities"].data.fill_(new_val)
-        updated_params = {"opacities": self.opacities}
+        updated_params = {"opacities": self.params["opacities"]}
         return updated_params
 
 
