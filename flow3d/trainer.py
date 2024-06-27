@@ -60,7 +60,7 @@ class Trainer:
         self.viewer = None
         if port is not None:
             server = get_server(port=port)
-            self.viewer = Viewer(server, render_fn=self.render_fn)
+            self.viewer = Viewer(server, render_fn=self.render_fn, mode="training")
 
         # metrics
         self.ssim = SSIM(data_range=1.0, size_average=True, channel=3)
@@ -494,7 +494,7 @@ class Trainer:
             self._batched_xys, self._batched_radii, self._batched_img_wh
         ):
             visible_masks = (_current_radii > 0).flatten()
-            xys_grad_norm = torch.linalg.norm(_current_xys.grad, dim=-1) * batch_size
+            xys_grad_norm = torch.linalg.norm(_current_xys.grad, dim=-1)[0] * batch_size
             if self._xys_grad_norm_acc is None:
                 self._xys_grad_norm_acc = xys_grad_norm
                 self._visible_num_steps = torch.ones_like(
@@ -646,7 +646,7 @@ class Trainer:
     def _reset_opacity_control_step(self):
         # Reset gaussian opacities.
         new_val = torch.logit(torch.tensor(0.8 * self.optim_cfg.cull_opacity_threshold))
-        fg_params = self.model.reset_opacities(new_val)
+        fg_params = self.model.fg.reset_opacities(new_val)
         # Modify optimizer states by new assignment.
         for param_name, new_params in fg_params.items():
             full_param_name = f"fg.params.{param_name}"
