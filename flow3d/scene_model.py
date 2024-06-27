@@ -122,6 +122,21 @@ class SceneModel(nn.Module):
             ).contiguous()
         return opacities
 
+    @staticmethod
+    def init_from_state_dict(state_dict, prefix=""):
+        fg = GaussianParams.init_from_state_dict(state_dict, prefix=f"{prefix}fg.params.")
+        bg = None
+        if any("bg." in k for k in state_dict):
+            bg = GaussianParams.init_from_state_dict(
+                state_dict, prefix=f"{prefix}bg.params."
+            )
+        motion_bases = MotionBases.init_from_state_dict(
+            state_dict, prefix=f"{prefix}motion_bases.params."
+        )
+        Ks = state_dict[f"{prefix}Ks"]
+        w2cs = state_dict[f"{prefix}w2cs"]
+        return SceneModel(Ks, w2cs, fg, motion_bases, bg)
+
     def render(
         self,
         # A single time instance for view rendering.

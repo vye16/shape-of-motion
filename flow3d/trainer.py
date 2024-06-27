@@ -32,14 +32,16 @@ class Trainer:
         # Logging.
         work_dir: str,
         port: int | None = None,
-        hang_on_complete: bool = True,
         log_every: int = 10,
-        checkpoint_every: int | None = 200,
-        validate_every: int | None = 500,
-        validate_video_every: int | None = 1000,
-        validate_viewer_assets_every: int | None = 100,
+        checkpoint_every: int = 200,
+        validate_every: int = 500,
+        validate_video_every: int = 1000,
+        validate_viewer_assets_every: int = 100,
     ):
         self.device = device
+        self.log_every = log_every
+        self.checkpoint_every = checkpoint_every
+        self.validate_every = validate_every
         self.validate_video_every = validate_video_every
         self.validate_viewer_assets_every = validate_viewer_assets_every
 
@@ -54,6 +56,17 @@ class Trainer:
             self.optim_cfg.reset_opacity_every_n_controls * self.optim_cfg.control_every
         )
         self.optimizers, self.scheduler = self.configure_optimizers()
+
+        # running stats for adaptive density control
+        self.running_stats = {
+            "xys_grad_norm_acc": torch.zeros(self.model.num_gaussians, device=device),
+            "vis_count": torch.zeros(
+                self.model.num_gaussians, device=device, dtype=torch.int64
+            ),
+            "max_radii": torch.zeros(self.model.num_gaussians, device=device),
+        }
+
+        self.work_dir = work_dir
         self.writer = SummaryWriter(log_dir=work_dir)
         self.global_step = 0
 
@@ -75,18 +88,43 @@ class Trainer:
         self.bg_lpips_metric = mLPIPS()
         self.fg_lpips_metric = mLPIPS()
 
-        self._xys_grad_norm_acc = None
-        self._visible_num_steps = None
-        self._max_normalized_radii = None
+    def save_checkpoint(self, path: str):
+        model_dict = self.model.state_dict()
+        optimizer_dict = {k: v.state_dict() for k, v in self.optimizers.items()}
+        scheduler_dict = {k: v.state_dict() for k, v in self.scheduler.items()}
+        ckpt = {
+            "model": model_dict,
+            "optimizers": optimizer_dict,
+            "schedulers": scheduler_dict,
+            "global_step": self.global_step,
+        }
+        torch.save(ckpt, path)
+        guru.info(f"Saved checkpoint at {self.global_step=} to {path}")
 
-    def load_state_dict(self, state_dict: dict):
-        model_dict = {}
-        for k, v in state_dict.items():
-            if k.startswith("model."):
-                name = k.split("model.")[-1]
-                model_dict[name] = v
+    @staticmethod
+    def init_from_checkpoint(
+        path: str, device: torch.device, *args, **kwargs
+    ) -> "Trainer":
+        guru.info(f"Loading checkpoint from {path}")
+        ckpt = torch.load(path)
+        state_dict = ckpt["model"]
+        model = SceneModel.init_from_state_dict(state_dict)
+        model = model.to(device)
+        trainer = Trainer(model, device, *args, **kwargs)
+        if "optimizers" in ckpt:
+            trainer.load_checkpoint_optimizers(ckpt["optimizers"])
+        if "schedulers" in ckpt:
+            trainer.load_checkpoint_schedulers(ckpt["schedulers"])
+        trainer.global_step = ckpt.get("global_step", 0)
+        return trainer
 
-        self.model.load_state_dict(model_dict)
+    def load_checkpoint_optimizers(self, opt_ckpt):
+        for k, v in self.optimizers.items():
+            v.load_state_dict(opt_ckpt[k])
+
+    def load_checkpoint_schedulers(self, sched_ckpt):
+        for k, v in self.scheduler.items():
+            v.load_state_dict(sched_ckpt[k])
 
     @torch.inference_mode()
     def render_fn(self, camera_state: CameraState, img_wh: tuple[int, int]):
@@ -111,9 +149,11 @@ class Trainer:
                 time.sleep(0.1)
             self.viewer.lock.acquire()
 
-        loss, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
+        loss, stats, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
         if loss.isnan():
-            import ipdb; ipdb.set_trace()
+            import ipdb
+
+            ipdb.set_trace()
         loss.backward()
 
         for opt in self.optimizers.values():
@@ -122,6 +162,8 @@ class Trainer:
         for sched in self.scheduler.values():
             sched.step()
 
+        self.log_dict(stats)
+        self.global_step += 1
         self.run_control_steps()
 
         if self.viewer is not None:
@@ -129,6 +171,9 @@ class Trainer:
             self.viewer.state.num_train_rays_per_sec = num_rays_per_sec
             if self.viewer.mode == "training":
                 self.viewer.update(self.global_step, num_rays_per_step)
+
+        if self.global_step % self.checkpoint_every == 0:
+            self.save_checkpoint(f"{self.work_dir}/checkpoints/last.ckpt")
 
         return loss.item()
 
@@ -211,9 +256,14 @@ class Trainer:
             )
             rendered_all.append(rendered)
             bg_colors.append(bg_color)
-            self._batched_xys.append(self.model._current_xys)
-            self._batched_radii.append(self.model._current_radii)
-            self._batched_img_wh.append(self.model._current_img_wh)
+            if (
+                self.model._current_xys is not None
+                and self.model._current_radii is not None
+                and self.model._current_img_wh is not None
+            ):
+                self._batched_xys.append(self.model._current_xys)
+                self._batched_radii.append(self.model._current_radii)
+                self._batched_img_wh.append(self.model._current_img_wh)
 
         # Necessary to make viewer work.
         num_rays_per_step = H * W * B
@@ -440,11 +490,7 @@ class Trainer:
             }
         )
 
-        # Log stats.
-        self.log_dict(stats)
-        self.global_step += 1
-
-        return loss, num_rays_per_step, num_rays_per_sec
+        return loss, stats, num_rays_per_step, num_rays_per_sec
 
     def log_dict(self, stats: dict):
         for k, v in stats.items():
@@ -473,9 +519,8 @@ class Trainer:
                 self._reset_opacity_control_step()
 
             # Reset stats after every control.
-            self._xys_grad_norm_acc = None
-            self._visible_num_steps = None
-            self._max_normalized_radii = None
+            for k in self.running_stats:
+                self.running_stats[k].zero_()
 
     @torch.no_grad()
     def _prepare_control_step(self) -> bool:
@@ -483,61 +528,50 @@ class Trainer:
         if not (
             self.model._current_radii is not None
             and self.model._current_xys is not None
-            and self._batched_xys is not None
-            and self._batched_radii is not None
         ):
-            guru.warning("Skipping control step preparation")
+            guru.warning("Model not training, skipping control step preparation")
             return False
 
         batch_size = len(self._batched_xys)
+        # these quantities are for each rendered view and have shapes (C, ...)
+        # must be aggregated over all views
         for _current_xys, _current_radii, _current_img_wh in zip(
             self._batched_xys, self._batched_radii, self._batched_img_wh
         ):
-            visible_masks = (_current_radii > 0).flatten()
-            xys_grad_norm = torch.linalg.norm(_current_xys.grad, dim=-1) * batch_size
-            if self._xys_grad_norm_acc is None:
-                self._xys_grad_norm_acc = xys_grad_norm
-                self._visible_num_steps = torch.ones_like(
-                    xys_grad_norm, dtype=torch.int64
-                )
-            else:
-                assert self._visible_num_steps is not None
-                self._xys_grad_norm_acc[visible_masks] += xys_grad_norm[visible_masks]
-                self._visible_num_steps[visible_masks] += 1
-            if self._max_normalized_radii is None:
-                self._max_normalized_radii = torch.zeros_like(
-                    self.model._current_radii, dtype=torch.float32
-                )
-            assert (
-                self._max_normalized_radii is not None and _current_img_wh is not None
+            sel = _current_radii > 0
+            gidcs = torch.where(sel)[1]
+            # normalize grads to [-1, 1] screen space
+            xys_grad = _current_xys.grad.clone()
+            xys_grad[..., 0] *= _current_img_wh[0] / 2.0 * batch_size
+            xys_grad[..., 1] *= _current_img_wh[1] / 2.0 * batch_size
+            self.running_stats["xys_grad_norm_acc"].index_add_(
+                0, gidcs, xys_grad[sel].norm(dim=-1)
             )
-            self._max_normalized_radii[visible_masks] = torch.maximum(
-                self._max_normalized_radii[visible_masks],
-                _current_radii[visible_masks] / max(_current_img_wh),
+            self.running_stats["vis_count"].index_add_(
+                0, gidcs, torch.ones_like(gidcs, dtype=torch.int64)
             )
+            max_radii = torch.maximum(
+                self.running_stats["max_radii"].index_select(0, gidcs),
+                _current_radii[sel] / max(_current_img_wh),
+            )
+            self.running_stats["max_radii"].index_put((gidcs,), max_radii)
         return True
 
     @torch.no_grad()
     def _densify_control_step(self, global_step):
-        assert (
-            self._xys_grad_norm_acc is not None
-            and self._visible_num_steps is not None
-            and self._max_normalized_radii is not None
-            and self._batched_img_wh is not None
-        )
+        assert (self.running_stats["vis_count"] > 0).any()
+
         cfg = self.optim_cfg
-        xys_grad_norm = (
-            (self._xys_grad_norm_acc / self._visible_num_steps)
-            * 0.5
-            * max(max(self._batched_img_wh))
-        )
-        is_grad_too_high = xys_grad_norm > cfg.densify_xys_grad_threshold
+        xys_grad_avg = self.running_stats["xys_grad_norm_acc"] / self.running_stats[
+            "vis_count"
+        ].clamp_min(1)
+        is_grad_too_high = xys_grad_avg > cfg.densify_xys_grad_threshold
         # Split gaussians.
         scales = self.model.get_scales_all()
-        is_scale_too_big = scales.max(dim=-1)[0] > cfg.densify_scale_threshold
+        is_scale_too_big = scales.amax(dim=-1) > cfg.densify_scale_threshold
         if global_step < cfg.stop_control_by_screen_steps:
             is_radius_too_big = (
-                self._max_normalized_radii > cfg.densify_screen_threshold
+                self.running_stats["max_radii"] > cfg.densify_screen_threshold
             )
         else:
             is_radius_too_big = torch.zeros_like(is_grad_too_high, dtype=torch.bool)
@@ -579,19 +613,21 @@ class Trainer:
                     num_bg_splits * 2 + num_bg_dups,
                 )
 
-        device = scales.device
-        # Update this since _cull_control_step might use it.
-        self._max_normalized_radii = torch.cat(
-            [
-                self._max_normalized_radii[:num_fg][~should_fg_split],
-                torch.zeros(num_fg_splits * 2, device=device),
-                torch.zeros(num_fg_dups, device=device),
-                self._max_normalized_radii[num_fg:][~should_bg_split],
-                torch.zeros(num_bg_splits * 2, device=device),
-                torch.zeros(num_bg_dups, device=device),
-            ],
-            dim=0,
-        )
+        # update running stats
+        for k, v in self.running_stats.items():
+            v_fg, v_bg = v[:num_fg], v[num_fg:]
+            new_v = torch.cat(
+                [
+                    v_fg[~should_fg_split],
+                    v_fg[should_fg_dup],
+                    v_fg[should_fg_split].repeat(2),
+                    v_bg[~should_bg_split],
+                    v_bg[should_bg_dup],
+                    v_bg[should_bg_split].repeat(2),
+                ],
+                dim=0,
+            )
+            self.running_stats[k] = new_v
         guru.info(
             f"Split {should_split.sum().item()} gaussians, "
             f"Duplicated {should_dup.sum().item()} gaussians, "
@@ -604,7 +640,7 @@ class Trainer:
         cfg = self.optim_cfg
         opacities = self.model.get_opacities_all()
         device = opacities.device
-        is_opacity_too_small = (opacities < cfg.cull_opacity_threshold)
+        is_opacity_too_small = opacities < cfg.cull_opacity_threshold
         is_radius_too_big = torch.zeros_like(is_opacity_too_small, dtype=torch.bool)
         is_scale_too_big = torch.zeros_like(is_opacity_too_small, dtype=torch.bool)
         cull_scale_threshold = (
@@ -616,9 +652,8 @@ class Trainer:
             scales = self.model.get_scales_all()
             is_scale_too_big = scales.amax(dim=-1) > cull_scale_threshold
             if global_step < cfg.stop_control_by_screen_steps:
-                assert self._max_normalized_radii is not None
                 is_radius_too_big = (
-                    self._max_normalized_radii > cfg.cull_screen_threshold
+                    self.running_stats["max_radii"] > cfg.cull_screen_threshold
                 )
         should_cull = is_opacity_too_small | is_radius_too_big | is_scale_too_big
         should_fg_cull = should_cull[:num_fg]
@@ -636,6 +671,10 @@ class Trainer:
                 full_param_name = f"bg.params.{param_name}"
                 optimizer = self.optimizers[full_param_name]
                 remove_from_optim(optimizer, [new_params], should_bg_cull)
+
+        # update running stats
+        for k, v in self.running_stats.items():
+            self.running_stats[k] = v[~should_cull]
 
         guru.info(
             f"Culled {should_cull.sum().item()} gaussians, "
@@ -662,9 +701,12 @@ class Trainer:
         lr_dict = asdict(self.lr_cfg)
         optimizers = {}
         schedulers = {}
+        # named parameters will be [part].params.[field]
+        # e.g. fg.params.means
+        # lr config is a nested dict for each fg/bg part
         for name, params in self.model.named_parameters():
-            mod, _, field = name.split(".")
-            lr = lr_dict[mod][field]
+            part, _, field = name.split(".")
+            lr = lr_dict[part][field]
             optim = torch.optim.Adam([{"params": params, "lr": lr, "name": name}])
 
             if "scales" in name:

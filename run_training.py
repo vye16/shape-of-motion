@@ -32,9 +32,9 @@ class TrainConfig:
     work_dir: str
     data_cfg: DataConfig
     num_fg: int = 40_000
-    num_bg: int = 0
+    num_bg: int = 100_000
     num_motion_bases: int = 10
-    num_epochs: int = 1000
+    num_epochs: int = 500
     port: int = 8890
     batch_size: int = 8
     num_dl_workers: int = 4
@@ -49,29 +49,20 @@ def main(cfg: TrainConfig):
     lr_cfg = SceneLRConfig()
     loss_cfg = LossesConfig()
     optim_cfg = OptimizerConfig()
-    Ks = train_dataset.get_Ks().to(device)
-    w2cs = train_dataset.get_w2cs().to(device)
 
     # if checkpoint exists
-    ckpt_path = os.path.join(cfg.work_dir, "last.ckpt")
-    if not os.path.exists(ckpt_path):
-        fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
-            train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases
-        )
-        # run initial optimization
-        run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
-        server = get_server(port=8890)
-        vis_init_params(server, fg_params, motion_bases)
-        model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
+    ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
+    initialize_and_checkpoint_model(cfg, train_dataset, device, ckpt_path)
 
-        guru.info(f"Saving initialization to {ckpt_path}")
-        os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
-        torch.save({"model": model.state_dict()}, ckpt_path)
-    else:
-        guru.info(f"Loading checkpoint from {ckpt_path}")
-        ckpt = torch.load(ckpt_path)
-        state_dict = ckpt["model"]
-        model = init_model_from_state_dict(state_dict)
+    trainer = Trainer.init_from_checkpoint(
+        ckpt_path,
+        device,
+        lr_cfg,
+        loss_cfg,
+        optim_cfg,
+        work_dir=cfg.work_dir,
+        port=cfg.port,
+    )
 
     train_loader = DataLoader(
         train_dataset,
@@ -79,10 +70,7 @@ def main(cfg: TrainConfig):
         num_workers=cfg.num_dl_workers,
         collate_fn=iPhoneDataset.train_collate_fn,
     )
-    trainer = Trainer(
-        model, device, lr_cfg, loss_cfg, optim_cfg, work_dir=cfg.work_dir, port=cfg.port
-    )
-    guru.info("Starting training")
+    guru.info(f"Starting training from {trainer.global_step=}")
     for _ in (pbar := tqdm(range(cfg.num_epochs))):
         for batch in train_loader:
             batch = to_device(batch, device)
@@ -100,19 +88,30 @@ def to_device(batch, device):
     return batch
 
 
-def init_model_from_state_dict(state_dict, prefix=""):
-    fg = GaussianParams.init_from_state_dict(state_dict, prefix=f"{prefix}fg.params.")
-    bg = None
-    if any("bg." in k for k in state_dict):
-        bg = GaussianParams.init_from_state_dict(
-            state_dict, prefix="{prefix}bg.params."
-        )
-    motion_bases = MotionBases.init_from_state_dict(
-        state_dict, prefix=f"{prefix}motion_bases.params."
+def initialize_and_checkpoint_model(
+    cfg: TrainConfig,
+    train_dataset: iPhoneDataset,
+    device: torch.device,
+    ckpt_path: str,
+):
+    if os.path.exists(ckpt_path):
+        guru.info(f"model checkpoint exists at {ckpt_path}")
+        return
+
+    fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
+        train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases
     )
-    Ks = state_dict[f"{prefix}Ks"]
-    w2cs = state_dict[f"{prefix}w2cs"]
-    return SceneModel(Ks, w2cs, fg, motion_bases, bg)
+    # run initial optimization
+    Ks = train_dataset.get_Ks().to(device)
+    w2cs = train_dataset.get_w2cs().to(device)
+    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
+    server = get_server(port=8890)
+    vis_init_params(server, fg_params, motion_bases)
+    model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
+
+    guru.info(f"Saving initialization to {ckpt_path}")
+    os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+    torch.save({"model": model.state_dict(), "epoch": 0, "global_step": 0}, ckpt_path)
 
 
 def init_model_from_tracks(

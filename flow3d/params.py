@@ -25,18 +25,16 @@ class GaussianParams(nn.Module):
             import ipdb
 
             ipdb.set_trace()
-        if motion_coefs is None:
-            motion_coefs = torch.zeros(0, device=means.device)
-        self.params = nn.ParameterDict(
-            {
-                "means": nn.Parameter(means),
-                "quats": nn.Parameter(quats),
-                "scales": nn.Parameter(scales),
-                "colors": nn.Parameter(colors),
-                "opacities": nn.Parameter(opacities),
-                "motion_coefs": nn.Parameter(motion_coefs),
-            }
-        )
+        params_dict = {
+            "means": nn.Parameter(means),
+            "quats": nn.Parameter(quats),
+            "scales": nn.Parameter(scales),
+            "colors": nn.Parameter(colors),
+            "opacities": nn.Parameter(opacities),
+        }
+        if motion_coefs is not None:
+            params_dict["motion_coefs"] = nn.Parameter(motion_coefs)
+        self.params = nn.ParameterDict(params_dict)
         self.quat_activation = lambda x: F.normalize(x, dim=-1, p=2)
         self.color_activation = torch.sigmoid
         self.scale_activation = torch.exp
@@ -50,13 +48,14 @@ class GaussianParams(nn.Module):
 
     @staticmethod
     def init_from_state_dict(state_dict, prefix="params."):
-        param_keys = ["means", "quats", "scales", "colors", "opacities", "motion_coefs"]
-        assert all(f"{prefix}{k}" in state_dict for k in param_keys)
+        req_keys = ["means", "quats", "scales", "colors", "opacities"]
+        assert all(f"{prefix}{k}" in state_dict for k in req_keys)
         args = {
+            "motion_coefs": None,
             "scene_center": torch.zeros(3),
             "scene_scale": torch.tensor(1.0),
         }
-        for k in param_keys + list(args.keys()):
+        for k in req_keys + list(args.keys()):
             if f"{prefix}{k}" in state_dict:
                 args[k] = state_dict[f"{prefix}{k}"]
         return GaussianParams(**args)
@@ -78,6 +77,7 @@ class GaussianParams(nn.Module):
         return self.quat_activation(self.params["quats"])
 
     def get_coefs(self) -> torch.Tensor:
+        assert "motion_coefs" in self.params
         return self.motion_coef_activation(self.params["motion_coefs"])
 
     def densify_params(self, should_split, should_dup):
@@ -164,7 +164,7 @@ def check_gaussian_sizes(
         and colors.shape[:-1] == dims
         and opacities.shape == dims
     )
-    if motion_coefs is not None:
+    if motion_coefs is not None and motion_coefs.numel() > 0:
         leading_dims_match &= motion_coefs.shape[:-1] == dims
     dims_correct = (
         means.shape[-1] == 3
