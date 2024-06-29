@@ -685,12 +685,14 @@ class Trainer:
     def _reset_opacity_control_step(self):
         # Reset gaussian opacities.
         new_val = torch.logit(torch.tensor(0.8 * self.optim_cfg.cull_opacity_threshold))
-        fg_params = self.model.fg.reset_opacities(new_val)
-        # Modify optimizer states by new assignment.
-        for param_name, new_params in fg_params.items():
-            full_param_name = f"fg.params.{param_name}"
-            optimizer = self.optimizers[full_param_name]
-            reset_in_optim(optimizer, [new_params])
+        for part in ["fg", "bg"]:
+            part_params = getattr(self.model, part).reset_opacities(new_val)
+            # Modify optimizer states by new assignment.
+            for param_name, new_params in part_params.items():
+                full_param_name = f"{part}.params.{param_name}"
+                optimizer = self.optimizers[full_param_name]
+                reset_in_optim(optimizer, [new_params])
+        guru.info("Reset opacities")
 
     def configure_optimizers(self):
         def _exponential_decay(step, *, lr_init, lr_final):
