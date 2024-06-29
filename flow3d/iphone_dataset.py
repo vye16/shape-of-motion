@@ -29,9 +29,9 @@ from flow3d.data_utils import (
 @dataclass
 class DataConfig:
     data_dir: str
-    start: int=0
-    end: int=-1
-    split: Literal["train", "val"]="train"
+    start: int = 0
+    end: int = -1
+    split: Literal["train", "val"] = "train"
     depth_type: Literal[
         "midas",
         "depth_anything",
@@ -154,7 +154,9 @@ class iPhoneDataset(Dataset):
                             osp.join(self.data_dir, f"rgb/{factor}x/{frame_name}.png")
                         )
                         for frame_name in tqdm(
-                            self.frame_names, desc="Loading images", leave=False
+                            self.frame_names,
+                            desc=f"Loading {self.split} images",
+                            leave=False,
                         )
                     ],
                 )
@@ -174,7 +176,9 @@ class iPhoneDataset(Dataset):
                                 )
                             )
                             for frame_name in tqdm(
-                                self.frame_names, desc="Loading masks", leave=False
+                                self.frame_names,
+                                desc=f"Loading {self.split} masks",
+                                leave=False,
                             )
                         ],
                     )
@@ -209,7 +213,7 @@ class iPhoneDataset(Dataset):
                             load_depth(frame_name)
                             for frame_name in tqdm(
                                 self.frame_names,
-                                desc="Loading depths",
+                                desc=f"Loading {self.split} depths",
                                 leave=False,
                             )
                         ],
@@ -285,7 +289,7 @@ class iPhoneDataset(Dataset):
                                 )
                                 for frame_name in tqdm(
                                     self.frame_names,
-                                    desc="Loading covisible masks",
+                                    desc=f"Loading {self.split} covisible masks",
                                     leave=False,
                                 )
                             ],
@@ -294,7 +298,7 @@ class iPhoneDataset(Dataset):
                     / 255.0
                 )
 
-        if self.training and self.scene_norm_dict is None:
+        if self.scene_norm_dict is None:
             cached_scene_norm_dict_path = osp.join(
                 self.cache_dir, "scene_norm_dict.pth"
             )
@@ -303,7 +307,7 @@ class iPhoneDataset(Dataset):
                 self.scene_norm_dict = torch.load(
                     osp.join(self.cache_dir, "scene_norm_dict.pth")
                 )
-            else:
+            elif self.training:
                 # Compute the scene scale and transform for normalization.
                 # Normalize the scene based on the foreground 3D tracks.
                 subsampled_tracks_3d = self.get_tracks_3d(
@@ -323,6 +327,8 @@ class iPhoneDataset(Dataset):
                 transfm = rt_to_mat4(R, torch.einsum("ij,j->i", -R, scene_center))
                 self.scene_norm_dict = SceneNormDict(scale=scale, transfm=transfm)
                 torch.save(self.scene_norm_dict, cached_scene_norm_dict_path)
+            else:
+                raise ValueError("scene_norm_dict must be provided for validation.")
 
         # Normalize the scene.
         scale = self.scene_norm_dict["scale"]
@@ -755,6 +761,7 @@ class iPhoneDatasetVideoView(Dataset):
             "depths": self.dataset.depths[index],
             "masks": self.dataset.masks[index],
         }
+
 
 """
 class iPhoneDataModule(BaseDataModule[iPhoneDataset]):

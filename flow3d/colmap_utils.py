@@ -6,7 +6,6 @@ import os
 from dataclasses import dataclass
 
 
-
 def get_colmap_camera_params(colmap_dir, img_files):
     cameras = read_cameras_binary(colmap_dir + "/cameras.bin")
     images = read_images_binary(colmap_dir + "/images.bin")

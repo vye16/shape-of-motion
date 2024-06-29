@@ -124,7 +124,9 @@ class SceneModel(nn.Module):
 
     @staticmethod
     def init_from_state_dict(state_dict, prefix=""):
-        fg = GaussianParams.init_from_state_dict(state_dict, prefix=f"{prefix}fg.params.")
+        fg = GaussianParams.init_from_state_dict(
+            state_dict, prefix=f"{prefix}fg.params."
+        )
         bg = None
         if any("bg." in k for k in state_dict):
             bg = GaussianParams.init_from_state_dict(
@@ -203,7 +205,8 @@ class SceneModel(nn.Module):
             d_track = track_3d_vals.shape[-1]
             colors_override = torch.cat([colors_override, track_3d_vals], dim=-1)
             bg_color = torch.cat(
-                [bg_color, torch.zeros(C, track_3d_vals.shape[-1], device=device)], dim=-1
+                [bg_color, torch.zeros(C, track_3d_vals.shape[-1], device=device)],
+                dim=-1,
             )
             ds_expected["tracks_3d"] = d_track
 
@@ -230,7 +233,7 @@ class SceneModel(nn.Module):
         )
 
         # Populate the current data for adaptive gaussian control.
-        if self.training:
+        if self.training and info["means2d"].requires_grad:
             self._current_xys = info["means2d"]
             self._current_radii = info["radii"]
             self._current_img_wh = img_wh

@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import warnings
 from tqdm import tqdm
 
@@ -10,7 +10,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
-from flow3d.iphone_dataset import DataConfig, iPhoneDataset
+from flow3d.iphone_dataset import (
+    DataConfig,
+    iPhoneDataset,
+    iPhoneDatasetKeypointView,
+)
 from flow3d.params import GaussianParams, MotionBases
 from flow3d.init_utils import (
     init_bg,
@@ -21,8 +25,10 @@ from flow3d.init_utils import (
 )
 from flow3d.scene_model import SceneModel
 from flow3d.trainer import Trainer
+from flow3d.validator import Validator
 from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.vis_utils import get_server
+from flow3d.data_utils import to_device
 
 torch.set_float32_matmul_precision("high")
 
@@ -38,6 +44,7 @@ class TrainConfig:
     port: int = 8890
     batch_size: int = 8
     num_dl_workers: int = 4
+    validate_every: int = 50
 
 
 def main(cfg: TrainConfig):
@@ -70,22 +77,38 @@ def main(cfg: TrainConfig):
         num_workers=cfg.num_dl_workers,
         collate_fn=iPhoneDataset.train_collate_fn,
     )
+
+    val_img_dataloader = (
+        DataLoader(
+            iPhoneDataset(
+                **asdict(replace(cfg.data_cfg, split="val", load_from_cache=True))
+            )
+        )
+        if train_dataset.has_validation
+        else None
+    )
+    val_kpt_dataloader = DataLoader(iPhoneDatasetKeypointView(train_dataset))
+
+    validator = Validator(
+        model=trainer.model,
+        device=device,
+        val_img_dataloader=val_img_dataloader,
+        val_kpt_dataloader=val_kpt_dataloader,
+        save_dir=cfg.work_dir,
+    )
+
     guru.info(f"Starting training from {trainer.global_step=}")
-    for _ in (pbar := tqdm(range(cfg.num_epochs))):
+    for epoch in (pbar := tqdm(range(cfg.num_epochs))):
         for batch in train_loader:
             batch = to_device(batch, device)
             loss = trainer.train_step(batch)
             pbar.set_description(f"Loss: {loss}")
 
-
-def to_device(batch, device):
-    if isinstance(batch, dict):
-        return {k: to_device(v, device) for k, v in batch.items()}
-    if isinstance(batch, (list, tuple)):
-        return [to_device(v, device) for v in batch]
-    if isinstance(batch, torch.Tensor):
-        return batch.to(device)
-    return batch
+        if (epoch > 0 and epoch % cfg.validate_every == 0) or (
+            epoch == cfg.num_epochs - 1
+        ):
+            val_logs = validator.validate()
+            trainer.log_dict(val_logs)
 
 
 def initialize_and_checkpoint_model(

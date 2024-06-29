@@ -10,6 +10,16 @@ class SceneNormDict(TypedDict):
     transfm: torch.Tensor
 
 
+def to_device(batch, device):
+    if isinstance(batch, dict):
+        return {k: to_device(v, device) for k, v in batch.items()}
+    if isinstance(batch, (list, tuple)):
+        return [to_device(v, device) for v in batch]
+    if isinstance(batch, torch.Tensor):
+        return batch.to(device)
+    return batch
+
+
 def normalize_coords(coords, h, w):
     assert coords.shape[-1] == 2
     return coords / torch.tensor([w - 1.0, h - 1.0], device=coords.device) * 2 - 1.0
