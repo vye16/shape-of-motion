@@ -15,3 +15,6 @@ loguru
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.2.0
 torchvision==0.17.0
+ipdb
+nerfview
+torchmetrics
