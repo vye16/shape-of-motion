@@ -64,10 +64,9 @@ class Validator:
     @torch.no_grad()
     def validate(self):
         self.reset_metrics()
-        # metric_imgs = self.validate_imgs()
+        metric_imgs = self.validate_imgs()
         metric_kpts = self.validate_keypoints()
-        # return {**metric_imgs, **metric_kpts}
-        return metric_kpts
+        return {**metric_imgs, **metric_kpts}
 
     @torch.no_grad()
     def validate_imgs(self):
