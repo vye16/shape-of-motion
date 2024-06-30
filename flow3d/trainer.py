@@ -151,6 +151,7 @@ class Trainer:
 
         loss, stats, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
         if loss.isnan():
+            guru.info(f"Loss is NaN at step {self.global_step}!!")
             import ipdb
 
             ipdb.set_trace()
@@ -310,7 +311,7 @@ class Trainer:
         rgb_loss = 0.8 * F.l1_loss(rendered_imgs, imgs) + 0.2 * (
             1 - self.ssim(rendered_imgs.permute(0, 3, 1, 2), imgs.permute(0, 3, 1, 2))
         )
-        loss += rgb_loss * 1.0
+        loss += rgb_loss * self.losses_cfg.w_rgb
 
         # Mask loss.
         if not self.model.has_bg:
@@ -432,25 +433,31 @@ class Trainer:
             means_fg_nbs.shape[0], 3, -1, 3
         )  # [G, 3, n, 3]
         if self.losses_cfg.w_smooth_tracks > 0:
-            small_accel_loss_tracks = (
+            small_accel_loss_tracks = 0.5 * (
                 (2 * means_fg_nbs[:, 1:-1] - means_fg_nbs[:, :-2] - means_fg_nbs[:, 2:])
                 .norm(dim=-1)
                 .mean()
             )
-            loss += small_accel_loss_tracks * self.losses_cfg.w_smooth_tracks * 0.5
+            loss += small_accel_loss_tracks * self.losses_cfg.w_smooth_tracks
 
         # Constrain the std of scales.
         # TODO: do we want to penalize before or after exp?
-        loss += 0.01 * torch.var(self.model.fg.params["scales"], dim=-1).mean()
+        loss += (
+            self.losses_cfg.w_scale_var
+            * torch.var(self.model.fg.params["scales"], dim=-1).mean()
+        )
         if self.model.bg is not None:
-            loss += 0.01 * torch.var(self.model.bg.params["scales"], dim=-1).mean()
+            loss += (
+                self.losses_cfg.w_scale_var
+                * torch.var(self.model.bg.params["scales"], dim=-1).mean()
+            )
 
         # # sparsity loss
         # loss += 0.01 * self.opacity_activation(self.opacities).abs().mean()
 
         # Acceleration along ray direction should be small.
         z_accel_loss = compute_z_acc_loss(means_fg_nbs, w2cs)
-        loss += z_accel_loss
+        loss += self.losses_cfg.w_z_accel * z_accel_loss
 
         # Prepare stats for logging.
         stats = {

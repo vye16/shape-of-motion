@@ -1,5 +1,26 @@
 from typing import Literal
 from dataclasses import dataclass
+from flow3d.data_utils import SceneNormDict
+
+
+@dataclass
+class DataConfig:
+    data_dir: str
+    start: int = 0
+    end: int = -1
+    split: Literal["train", "val"] = "train"
+    depth_type: Literal[
+        "midas",
+        "depth_anything",
+        "lidar",
+        "depth_anything_colmap",
+    ] = "depth_anything_colmap"
+    camera_type: Literal["original", "refined"] = "refined"
+    use_median_filter: bool = False
+    num_targets_per_frame: int = 1
+    scene_norm_dict: SceneNormDict | None = None
+    load_from_cache: bool = False
+    skip_load_imgs: bool = False
 
 
 @dataclass
@@ -36,6 +57,7 @@ class SceneLRConfig:
 
 @dataclass
 class LossesConfig:
+    w_rgb: float = 1.0
     w_depth_reg: float = 0.5
     w_depth_const: float = 0.1
     w_depth_grad: float = 1
@@ -43,15 +65,8 @@ class LossesConfig:
     w_mask: float = 1.0
     w_smooth_bases: float = 0.1
     w_smooth_tracks: float = 0.0
-    w_coef_similarity: float = 0.0
-    w_pairwise_rigid: float = 0.0
-    w_group_rigid: float = 0.0
-    w_knn_rigid: float = 0.0
-    knn_mode: Literal["dist", "coef"] = "dist"
-    num_knn_samples: int = 64
-    num_knn_neighbors: int = 16
-    num_knn_masks: int = 4
-    knn_beta: float = 2
+    w_scale_var: float = 0.01
+    w_z_accel: float = 1.0
 
 
 @dataclass

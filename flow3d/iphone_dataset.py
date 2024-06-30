@@ -26,26 +26,6 @@ from flow3d.data_utils import (
 )
 
 
-@dataclass
-class DataConfig:
-    data_dir: str
-    start: int = 0
-    end: int = -1
-    split: Literal["train", "val"] = "train"
-    depth_type: Literal[
-        "midas",
-        "depth_anything",
-        "lidar",
-        "depth_anything_colmap",
-    ] = "depth_anything_colmap"
-    camera_type: Literal["original", "refined"] = "refined"
-    use_median_filter: bool = False
-    num_targets_per_frame: int = 1
-    scene_norm_dict: SceneNormDict | None = None
-    load_from_cache: bool = False
-    skip_load_imgs: bool = False
-
-
 class iPhoneDataset(Dataset):
     def __init__(
         self,

@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass, replace
 import warnings
 from tqdm import tqdm
+import yaml
 
 import tyro
 import os
@@ -9,9 +10,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
+from flow3d.configs import DataConfig, SceneLRConfig, LossesConfig, OptimizerConfig
 from flow3d.iphone_dataset import (
-    DataConfig,
     iPhoneDataset,
     iPhoneDatasetKeypointView,
 )
@@ -45,6 +45,9 @@ class TrainConfig:
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 50
+    lr_cfg: SceneLRConfig = SceneLRConfig()
+    loss_cfg: LossesConfig = LossesConfig()
+    optim_cfg: OptimizerConfig = OptimizerConfig()
 
 
 def main(cfg: TrainConfig):
@@ -53,9 +56,11 @@ def main(cfg: TrainConfig):
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lr_cfg = SceneLRConfig()
-    loss_cfg = LossesConfig()
-    optim_cfg = OptimizerConfig()
+
+    # save config
+    os.makedirs(cfg.work_dir, exist_ok=True)
+    with open(f"{cfg.work_dir}/cfg.yaml", "w") as f:
+        yaml.dump(asdict(cfg), f, default_flow_style=False)
 
     # if checkpoint exists
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
@@ -64,9 +69,9 @@ def main(cfg: TrainConfig):
     trainer = Trainer.init_from_checkpoint(
         ckpt_path,
         device,
-        lr_cfg,
-        loss_cfg,
-        optim_cfg,
+        cfg.lr_cfg,
+        cfg.loss_cfg,
+        cfg.optim_cfg,
         work_dir=cfg.work_dir,
         port=cfg.port,
     )
