@@ -18,7 +18,7 @@ from flow3d.loss_utils import (
 from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
 from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
-from flow3d.vis_utils import get_server
+from flow3d.vis.utils import get_server
 
 
 class Trainer:

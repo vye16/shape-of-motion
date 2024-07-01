@@ -1,21 +1,18 @@
 from dataclasses import asdict, dataclass, replace
-import warnings
 from tqdm import tqdm
 import yaml
 
 import tyro
 import os
 from loguru import logger as guru
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
 from flow3d.configs import DataConfig, SceneLRConfig, LossesConfig, OptimizerConfig
-from flow3d.iphone_dataset import (
+from flow3d.data.iphone_dataset import (
     iPhoneDataset,
     iPhoneDatasetKeypointView,
 )
-from flow3d.params import GaussianParams, MotionBases
 from flow3d.init_utils import (
     init_bg,
     init_fg_from_tracks_3d,
@@ -27,8 +24,8 @@ from flow3d.scene_model import SceneModel
 from flow3d.trainer import Trainer
 from flow3d.validator import Validator
 from flow3d.tensor_dataclass import StaticObservations, TrackObservations
-from flow3d.vis_utils import get_server
-from flow3d.data_utils import to_device
+from flow3d.vis.utils import get_server
+from flow3d.data.utils import to_device
 
 torch.set_float32_matmul_precision("high")
 

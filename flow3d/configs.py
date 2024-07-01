@@ -1,6 +1,6 @@
 from typing import Literal
 from dataclasses import dataclass
-from flow3d.data_utils import SceneNormDict
+from flow3d.data.utils import SceneNormDict
 
 
 @dataclass

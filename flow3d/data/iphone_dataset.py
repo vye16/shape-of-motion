@@ -16,8 +16,8 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset, default_collate
 from tqdm import tqdm
 
 from flow3d.transforms import rt_to_mat4
-from flow3d.colmap_utils import get_colmap_camera_params
-from flow3d.data_utils import (
+from flow3d.data.colmap import get_colmap_camera_params
+from flow3d.data.utils import (
     masked_median_blur,
     normalize_coords,
     parse_tapir_track_info,

@@ -1,8 +1,8 @@
 import numpy as np
-from typing import List, Optional, Tuple, TypedDict
-
 import torch
 import torch.nn.functional as F
+
+from typing import List, Optional, Tuple, TypedDict
 
 
 class SceneNormDict(TypedDict):

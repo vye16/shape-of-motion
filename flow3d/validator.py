@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, Dataset
 from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
 from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
-from flow3d.data_utils import to_device, normalize_coords
+from flow3d.data.utils import to_device, normalize_coords
 
 
 class Validator:

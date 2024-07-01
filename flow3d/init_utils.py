@@ -27,7 +27,7 @@ from flow3d.tensor_dataclass import (
     TrackObservations,
 )
 from flow3d.transforms import cont_6d_to_rmat, rt_to_mat4, solve_procrustes
-from flow3d.vis_utils import (
+from flow3d.vis.utils import (
     draw_keypoints_video,
     get_server,
     project_2d_tracks,
