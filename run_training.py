@@ -63,7 +63,7 @@ def main(cfg: TrainConfig):
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
     initialize_and_checkpoint_model(cfg, train_dataset, device, ckpt_path)
 
-    trainer = Trainer.init_from_checkpoint(
+    trainer, start_epoch = Trainer.init_from_checkpoint(
         ckpt_path,
         device,
         cfg.lr_cfg,
@@ -100,11 +100,18 @@ def main(cfg: TrainConfig):
     )
 
     guru.info(f"Starting training from {trainer.global_step=}")
-    for epoch in (pbar := tqdm(range(cfg.num_epochs))):
+    for epoch in (
+        pbar := tqdm(
+            range(start_epoch, cfg.num_epochs),
+            initial=start_epoch,
+            total=cfg.num_epochs,
+        )
+    ):
+        trainer.set_epoch(epoch)
         for batch in train_loader:
             batch = to_device(batch, device)
             loss = trainer.train_step(batch)
-            pbar.set_description(f"Loss: {loss}")
+            pbar.set_description(f"Loss: {loss:.6f}")
 
         if (epoch > 0 and epoch % cfg.validate_every == 0) or (
             epoch == cfg.num_epochs - 1

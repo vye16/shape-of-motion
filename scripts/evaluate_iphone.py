@@ -151,8 +151,11 @@ def load_data_dict(data_dir, train_names, val_names):
 def load_result_dict(result_dir, val_names):
     try:
         pred_val_imgs = np.array(
-            [iio.imread(osp.join(result_dir, "rgb", f"{name}.png")) for name in val_names]
-            )
+            [
+                iio.imread(osp.join(result_dir, "rgb", f"{name}.png"))
+                for name in val_names
+            ]
+        )
     except:
         pred_val_imgs = None
     try:

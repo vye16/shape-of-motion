@@ -69,6 +69,7 @@ class Trainer:
         self.work_dir = work_dir
         self.writer = SummaryWriter(log_dir=work_dir)
         self.global_step = 0
+        self.epoch = 0
 
         self.viewer = None
         if port is not None:
@@ -88,6 +89,9 @@ class Trainer:
         self.bg_lpips_metric = mLPIPS()
         self.fg_lpips_metric = mLPIPS()
 
+    def set_epoch(self, epoch: int):
+        self.epoch = epoch
+
     def save_checkpoint(self, path: str):
         model_dict = self.model.state_dict()
         optimizer_dict = {k: v.state_dict() for k, v in self.optimizers.items()}
@@ -97,6 +101,7 @@ class Trainer:
             "optimizers": optimizer_dict,
             "schedulers": scheduler_dict,
             "global_step": self.global_step,
+            "epoch": self.epoch,
         }
         torch.save(ckpt, path)
         guru.info(f"Saved checkpoint at {self.global_step=} to {path}")
@@ -116,7 +121,9 @@ class Trainer:
         if "schedulers" in ckpt:
             trainer.load_checkpoint_schedulers(ckpt["schedulers"])
         trainer.global_step = ckpt.get("global_step", 0)
-        return trainer
+        start_epoch = ckpt.get("epoch", 0)
+        trainer.set_epoch(start_epoch)
+        return trainer, start_epoch
 
     def load_checkpoint_optimizers(self, opt_ckpt):
         for k, v in self.optimizers.items():
