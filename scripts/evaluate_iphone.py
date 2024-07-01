@@ -148,12 +148,13 @@ def load_data_dict(data_dir, train_names, val_names):
     }
 
 
-def load_result_dict(result_dir, train_names, val_names):
-    print(len(val_names))
-    print(len(glob(osp.join(result_dir, "rgb", "*.png"))))
-    pred_val_imgs = np.array(
-        [iio.imread(osp.join(result_dir, "rgb", f"{name}.png")) for name in val_names]
-    )
+def load_result_dict(result_dir, val_names):
+    try:
+        pred_val_imgs = np.array(
+            [iio.imread(osp.join(result_dir, "rgb", f"{name}.png")) for name in val_names]
+            )
+    except:
+        pred_val_imgs = None
     try:
         keypoints_dict = np.load(
             osp.join(result_dir, "keypoints.npz"), allow_pickle=True
@@ -409,7 +410,7 @@ if __name__ == "__main__":
             val_names = json.load(f)["frame_names"]
 
         data_dict = load_data_dict(data_dir, train_names, val_names)
-        result_dict = load_result_dict(result_dir, train_names, val_names)
+        result_dict = load_result_dict(result_dir, val_names)
         if result_dict["pred_keypoints_3d"] is not None:
             epe, pck_3d_10cm, pck_3d_5cm = evaluate_3d_tracking(data_dict, result_dict)
             AJ, APCK, occ_acc = evaluate_2d_tracking(data_dict, result_dict)
@@ -420,6 +421,9 @@ if __name__ == "__main__":
             APCK_all.append(APCK)
             occ_acc_all.append(occ_acc)
         if len(data_dict["val_imgs"]) > 0:
+            if result_dict["pred_val_imgs"] is None:
+                print("No NV results found.")
+                continue
             mpsnr, mssim, mlpips = evaluate_nv(data_dict, result_dict)
             mpsnr_all.append(mpsnr)
             mssim_all.append(mssim)
