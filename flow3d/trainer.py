@@ -2,7 +2,7 @@ from dataclasses import asdict
 import functools
 import time
 from typing import cast
-from nerfview import CameraState, Viewer
+from nerfview import CameraState
 import numpy as np
 from loguru import logger as guru
 from pytorch_msssim import SSIM
@@ -19,6 +19,7 @@ from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
 from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
 from flow3d.vis.utils import get_server
+from flow3d.vis.viewer import DynamicViewer
 
 
 class Trainer:
@@ -74,7 +75,9 @@ class Trainer:
         self.viewer = None
         if port is not None:
             server = get_server(port=port)
-            self.viewer = Viewer(server, render_fn=self.render_fn, mode="training")
+            self.viewer = DynamicViewer(
+                server, self.render_fn, model.num_frames, work_dir, mode="training"
+            )
 
         # metrics
         self.ssim = SSIM(data_range=1.0, size_average=True, channel=3)
@@ -109,7 +112,7 @@ class Trainer:
     @staticmethod
     def init_from_checkpoint(
         path: str, device: torch.device, *args, **kwargs
-    ) -> "Trainer":
+    ) -> tuple["Trainer", int]:
         guru.info(f"Loading checkpoint from {path}")
         ckpt = torch.load(path)
         state_dict = ckpt["model"]
@@ -146,6 +149,8 @@ class Trainer:
             torch.from_numpy(camera_state.c2w.astype(np.float32)).to(self.device)
         )
         t = 0
+        if self.viewer is not None:
+            t = int(self.viewer._playback_guis[0].value)
         self.model.training = False
         img = self.model.render(t, w2c[None], K[None], img_wh)["img"][0]
         return (img.cpu().numpy() * 255.0).astype(np.uint8)

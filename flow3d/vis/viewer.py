@@ -24,9 +24,9 @@ class DynamicViewer(Viewer):
         work_dir: str,
         mode: Literal["rendering", "training"] = "rendering",
     ):
-        super().__init__(server, render_fn, mode)
         self.num_frames = num_frames
         self.work_dir = Path(work_dir)
+        super().__init__(server, render_fn, mode)
 
     def _define_guis(self):
         super()._define_guis()

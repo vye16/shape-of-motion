@@ -18,3 +18,4 @@ torchvision==0.17.0
 ipdb
 nerfview
 torchmetrics
+splines==0.3.2
