@@ -12,6 +12,7 @@ from flow3d.configs import DataConfig, SceneLRConfig, LossesConfig, OptimizerCon
 from flow3d.data.iphone_dataset import (
     iPhoneDataset,
     iPhoneDatasetKeypointView,
+    iPhoneDatasetVideoView,
 )
 from flow3d.init_utils import (
     init_bg,
@@ -42,6 +43,7 @@ class TrainConfig:
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 50
+    save_videos_every: int = 50
     lr_cfg: SceneLRConfig = SceneLRConfig()
     loss_cfg: LossesConfig = LossesConfig()
     optim_cfg: OptimizerConfig = OptimizerConfig()
@@ -80,7 +82,7 @@ def main(cfg: TrainConfig):
         collate_fn=iPhoneDataset.train_collate_fn,
     )
 
-    val_img_dataloader = (
+    val_img_loader = (
         DataLoader(
             iPhoneDataset(
                 **asdict(replace(cfg.data_cfg, split="val", load_from_cache=True))
@@ -89,13 +91,14 @@ def main(cfg: TrainConfig):
         if train_dataset.has_validation
         else None
     )
-    val_kpt_dataloader = DataLoader(iPhoneDatasetKeypointView(train_dataset))
+    val_kpt_loader = DataLoader(iPhoneDatasetKeypointView(train_dataset))
 
     validator = Validator(
         model=trainer.model,
         device=device,
-        val_img_dataloader=val_img_dataloader,
-        val_kpt_dataloader=val_kpt_dataloader,
+        train_loader=DataLoader(iPhoneDatasetVideoView(train_dataset)),
+        val_img_loader=val_img_loader,
+        val_kpt_loader=val_kpt_loader,
         save_dir=cfg.work_dir,
     )
 
@@ -118,6 +121,10 @@ def main(cfg: TrainConfig):
         ):
             val_logs = validator.validate()
             trainer.log_dict(val_logs)
+        if (epoch > 0 and epoch % cfg.save_videos_every == 0) or (
+            epoch == cfg.num_epochs - 1
+        ):
+            validator.save_train_videos(epoch)
 
 
 def initialize_and_checkpoint_model(

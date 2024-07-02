@@ -18,6 +18,11 @@ from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
 from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
 from flow3d.data.utils import to_device, normalize_coords
+from flow3d.vis.utils import (
+    make_video_divisble,
+    apply_depth_colormap,
+    plot_correspondences,
+)
 
 
 class Validator:
@@ -25,14 +30,16 @@ class Validator:
         self,
         model: SceneModel,
         device: torch.device,
-        val_img_dataloader: DataLoader | None,
-        val_kpt_dataloader: DataLoader,
+        train_loader: DataLoader | None,
+        val_img_loader: DataLoader | None,
+        val_kpt_loader: DataLoader | None,
         save_dir: str,
     ):
         self.model = model
         self.device = device
-        self.val_img_dataloader = val_img_dataloader
-        self.val_kpt_dataloader = val_kpt_dataloader
+        self.train_loader = train_loader
+        self.val_img_loader = val_img_loader
+        self.val_kpt_loader = val_kpt_loader
         self.save_dir = save_dir
         self.has_bg = self.model.has_bg
 
@@ -71,10 +78,10 @@ class Validator:
     @torch.no_grad()
     def validate_imgs(self):
         guru.info("rendering validation images...")
-        if self.val_img_dataloader is None:
+        if self.val_img_loader is None:
             return
 
-        for batch in tqdm(self.val_img_dataloader, desc="render val images"):
+        for batch in tqdm(self.val_img_loader, desc="render val images"):
             batch = to_device(batch, self.device)
             frame_name = batch["frame_names"][0]
             t = batch["ts"][0]
@@ -140,12 +147,14 @@ class Validator:
 
     @torch.no_grad()
     def validate_keypoints(self):
+        if self.val_kpt_loader is None:
+            return
         pred_keypoints_3d_all = []
-        time_ids = self.val_kpt_dataloader.dataset.time_ids.tolist()
-        h, w = self.val_kpt_dataloader.dataset.dataset.imgs.shape[1:3]
+        time_ids = self.val_kpt_loader.dataset.time_ids.tolist()
+        h, w = self.val_kpt_loader.dataset.dataset.imgs.shape[1:3]
         pred_train_depths = np.zeros((len(time_ids), h, w))
 
-        for batch in tqdm(self.val_kpt_dataloader, desc="render val keypoints"):
+        for batch in tqdm(self.val_kpt_loader, desc="render val keypoints"):
             batch = to_device(batch, self.device)
             # (2,).
             ts = batch["ts"][0]
@@ -204,8 +213,8 @@ class Validator:
             )
 
         # Dump unified results.
-        all_Ks = self.val_kpt_dataloader.dataset.dataset.Ks
-        all_w2cs = self.val_kpt_dataloader.dataset.dataset.w2cs
+        all_Ks = self.val_kpt_loader.dataset.dataset.Ks
+        all_w2cs = self.val_kpt_loader.dataset.dataset.w2cs
 
         keypoint_result_dict = {
             "Ks": all_Ks[time_ids].cpu().numpy(),
@@ -225,3 +234,186 @@ class Validator:
         )
 
         return {"val/pck": self.pck_metric.compute()}
+
+    @torch.no_grad()
+    def save_train_videos(self, epoch: int):
+        if self.train_loader is None:
+            return
+        video_dir = osp.join(self.save_dir, "videos", f"epoch_{epoch:04d}")
+        os.makedirs(video_dir, exist_ok=True)
+        fps = getattr(self.train_loader.dataset.dataset, "fps", 15.0)
+        # Render video.
+        video = []
+        ref_pred_depths = []
+        masks = []
+        depth_min, depth_max = 1e6, 0
+        for batch_idx, batch in enumerate(
+            tqdm(self.train_loader, desc="Rendering video", leave=False)
+        ):
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items()
+            }
+            # ().
+            t = batch["ts"][0]
+            # (4, 4).
+            w2c = batch["w2cs"][0]
+            # (3, 3).
+            K = batch["Ks"][0]
+            # (H, W, 3).
+            img = batch["imgs"][0]
+            # (H, W).
+            depth = batch["depths"][0]
+
+            img_wh = img.shape[-2::-1]
+            rendered = self.model.render(
+                t, w2c[None], K[None], img_wh, return_depth=True, return_mask=True
+            )
+            # Putting results onto CPU since it will consume unnecessarily
+            # large GPU memory for long sequence OW.
+            video.append(torch.cat([img, rendered["img"][0]], dim=1).cpu())
+            ref_pred_depth = torch.cat(
+                (depth[..., None], rendered["depth"][0]), dim=1
+            ).cpu()
+            ref_pred_depths.append(ref_pred_depth)
+            depth_min = min(depth_min, ref_pred_depth.min().item())
+            depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
+            if rendered["mask"] is not None:
+                masks.append(rendered["mask"][0].cpu().squeeze(-1))
+
+        # rgb video
+        video = torch.stack(video, dim=0)
+        iio.mimwrite(
+            osp.join(video_dir, "rgbs.mp4"),
+            make_video_divisble((video.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
+        # depth video
+        depth_video = torch.stack(
+            [
+                apply_depth_colormap(
+                    ref_pred_depth, near_plane=depth_min, far_plane=depth_max
+                )
+                for ref_pred_depth in ref_pred_depths
+            ],
+            dim=0,
+        )
+        iio.mimwrite(
+            osp.join(video_dir, "depths.mp4"),
+            make_video_divisble((depth_video.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
+        if len(masks) > 0:
+            # mask video
+            mask_video = torch.stack(masks, dim=0)
+            iio.mimwrite(
+                osp.join(video_dir, "masks.mp4"),
+                make_video_divisble((mask_video.numpy() * 255).astype(np.uint8)),
+                fps=fps,
+            )
+
+        # Render 2D track video.
+        tracks_2d, target_imgs = [], []
+        sample_interval = 10
+        batch0 = {
+            k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+            for k, v in self.train_loader.dataset[0].items()
+        }
+        # ().
+        t = batch0["ts"]
+        # (4, 4).
+        w2c = batch0["w2cs"]
+        # (3, 3).
+        K = batch0["Ks"]
+        # (H, W, 3).
+        img = batch0["imgs"]
+        # (H, W).
+        bool_mask = batch0["masks"] > 0.5
+        img_wh = img.shape[-2::-1]
+        for batch in tqdm(
+            self.train_loader, desc="Rendering 2D track video", leave=False
+        ):
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items()
+            }
+            # Putting results onto CPU since it will consume unnecessarily
+            # large GPU memory for long sequence OW.
+            # (1, H, W, 3).
+            target_imgs.append(batch["imgs"].cpu())
+            # (1,).
+            target_ts = batch["ts"]
+            # (1, 4, 4).
+            target_w2cs = batch["w2cs"]
+            # (1, 3, 3).
+            target_Ks = batch["Ks"]
+            rendered = self.model.render(
+                t,
+                w2c[None],
+                K[None],
+                img_wh,
+                target_ts=target_ts,
+                target_w2cs=target_w2cs,
+            )
+            pred_tracks_3d = rendered["tracks_3d"][0][
+                ::sample_interval, ::sample_interval
+            ][bool_mask[::sample_interval, ::sample_interval]].swapaxes(0, 1)
+            pred_tracks_2d = torch.einsum("bij,bpj->bpi", target_Ks, pred_tracks_3d)
+            pred_tracks_2d = pred_tracks_2d[..., :2] / torch.clamp(
+                pred_tracks_2d[..., 2:], min=1e-6
+            )
+            tracks_2d.append(pred_tracks_2d.cpu())
+        tracks_2d = torch.cat(tracks_2d, dim=0)
+        target_imgs = torch.cat(target_imgs, dim=0)
+        track_2d_video = plot_correspondences(
+            target_imgs.numpy(),
+            tracks_2d.numpy(),
+            query_id=cast(int, t),
+        )
+        iio.mimwrite(
+            osp.join(video_dir, "tracks_2d.mp4"),
+            make_video_divisble(np.stack(track_2d_video, 0)),
+            fps=fps,
+        )
+        # Render motion coefficient video.
+        with torch.random.fork_rng():
+            torch.random.manual_seed(0)
+            motion_coef_colors = torch.pca_lowrank(
+                self.model.fg.get_coefs()[None],
+                q=3,
+            )[0][0]
+        motion_coef_colors = (motion_coef_colors - motion_coef_colors.min(0)[0]) / (
+            motion_coef_colors.max(0)[0] - motion_coef_colors.min(0)[0]
+        )
+        motion_coef_colors = F.pad(
+            motion_coef_colors, (0, 0, 0, self.model.bg.num_gaussians), value=0.5
+        )
+        video = []
+        for batch in tqdm(
+            self.train_loader, desc="Rendering motion coefficient video", leave=False
+        ):
+            batch = {
+                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                for k, v in batch.items()
+            }
+            # ().
+            t = batch["ts"][0]
+            # (4, 4).
+            w2c = batch["w2cs"][0]
+            # (3, 3).
+            K = batch["Ks"][0]
+            # (3, 3).
+            img = batch["imgs"][0]
+            img_wh = img.shape[-2::-1]
+            rendered = self.model.render(
+                t, w2c[None], K[None], img_wh, colors_override=motion_coef_colors
+            )
+            # Putting results onto CPU since it will consume unnecessarily
+            # large GPU memory for long sequence OW.
+            video.append(torch.cat([img, rendered["img"][0]], dim=1).cpu())
+        video = torch.stack(video, dim=0)
+        iio.mimwrite(
+            osp.join(video_dir, "motion_coefs.mp4"),
+            make_video_divisble((video.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
