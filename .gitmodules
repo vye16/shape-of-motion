@@ -1,0 +1,6 @@
+[submodule "preproc/tapnet"]
+	path = preproc/tapnet
+	url = https://github.com/google-deepmind/tapnet.git
+[submodule "preproc/DROID-SLAM"]
+	path = preproc/DROID-SLAM
+	url = https://github.com/princeton-vl/DROID-SLAM.git
