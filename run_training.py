@@ -14,7 +14,12 @@ from flow3d.configs import (
     LossesConfig,
     OptimizerConfig,
 )
-from flow3d.data import get_train_val_datasets, BaseDataset, iPhoneDataConfig, DavisDataConfig
+from flow3d.data import (
+    get_train_val_datasets,
+    BaseDataset,
+    iPhoneDataConfig,
+    DavisDataConfig,
+)
 from flow3d.init_utils import (
     init_bg,
     init_fg_from_tracks_3d,
@@ -35,10 +40,13 @@ torch.set_float32_matmul_precision("high")
 @dataclass
 class TrainConfig:
     work_dir: str
-    data_cfg: Union[
+    data: Union[
         Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")],
         Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")],
     ]
+    lr: SceneLRConfig
+    loss: LossesConfig
+    optim: OptimizerConfig
     num_fg: int = 40_000
     num_bg: int = 100_000
     num_motion_bases: int = 10
@@ -48,15 +56,12 @@ class TrainConfig:
     num_dl_workers: int = 4
     validate_every: int = 50
     save_videos_every: int = 50
-    lr_cfg: SceneLRConfig = SceneLRConfig()
-    loss_cfg: LossesConfig = LossesConfig()
-    optim_cfg: OptimizerConfig = OptimizerConfig()
 
 
 def main(cfg: TrainConfig):
 
     train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
-        get_train_val_datasets(cfg.data_cfg)
+        get_train_val_datasets(cfg.data)
     )
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
 
@@ -74,9 +79,9 @@ def main(cfg: TrainConfig):
     trainer, start_epoch = Trainer.init_from_checkpoint(
         ckpt_path,
         device,
-        cfg.lr_cfg,
-        cfg.loss_cfg,
-        cfg.optim_cfg,
+        cfg.lr,
+        cfg.loss,
+        cfg.optim,
         work_dir=cfg.work_dir,
         port=cfg.port,
     )
@@ -194,4 +199,4 @@ def init_model_from_tracks(
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    main(tyro.cli(TrainConfig))
