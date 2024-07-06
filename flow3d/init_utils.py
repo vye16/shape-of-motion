@@ -132,6 +132,7 @@ def init_motion_params_with_procrustes(
 
     # remove tracks that are not visible in any frame
     valid_mask = valid_mask & tracks_3d.visibles.any(dim=1)
+    print(f"{valid_mask.sum()=}")
 
     tracks_3d = tracks_3d.filter_valid(valid_mask)
     means_cano = means_cano[valid_mask]
@@ -530,6 +531,7 @@ def sample_initial_bases_centers(
 
     # linearly interpolate missing 3d points
     xyz = cp.asarray(tracks_3d.xyz)
+    print(f"{xyz.shape=}")
     visibles = cp.asarray(tracks_3d.visibles)
 
     num_tracks = xyz.shape[0]

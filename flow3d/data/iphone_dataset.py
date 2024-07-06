@@ -12,8 +12,9 @@ import roma
 import torch
 import torch.nn.functional as F
 from loguru import logger as guru
-from torch.utils.data import DataLoader, Dataset, TensorDataset, default_collate
+from torch.utils.data import Dataset
 from tqdm import tqdm
+from flow3d.data.base_dataset import BaseDataset
 
 from flow3d.transforms import rt_to_mat4
 from flow3d.data.colmap import get_colmap_camera_params
@@ -26,7 +27,27 @@ from flow3d.data.utils import (
 )
 
 
-class iPhoneDataset(Dataset):
+@dataclass
+class iPhoneDataConfig:
+    data_dir: str
+    start: int = 0
+    end: int = -1
+    split: Literal["train", "val"] = "train"
+    depth_type: Literal[
+        "midas",
+        "depth_anything",
+        "lidar",
+        "depth_anything_colmap",
+    ] = "depth_anything_colmap"
+    camera_type: Literal["original", "refined"] = "refined"
+    use_median_filter: bool = False
+    num_targets_per_frame: int = 1
+    scene_norm_dict: SceneNormDict | None = None
+    load_from_cache: bool = False
+    skip_load_imgs: bool = False
+
+
+class iPhoneDataset(BaseDataset):
     def __init__(
         self,
         data_dir: str,
@@ -83,7 +104,6 @@ class iPhoneDataset(Dataset):
         # with open(osp.join(data_dir, "dataset.json")) as f:
         #     dataset_dict = json.load(f)
         # self.num_frames = dataset_dict["num_exemplars"]
-        self.num_frames = len(self.frame_names)
         guru.info(f"{self.num_frames=}")
         with open(osp.join(data_dir, "extra.json")) as f:
             extra_dict = json.load(f)
@@ -323,6 +343,10 @@ class iPhoneDataset(Dataset):
                 f"{self.imgs.shape=} {self.valid_masks.shape=} {self.masks.shape=}"
             )
 
+    @property
+    def num_frames(self) -> int:
+        return len(self.frame_names)
+
     def __len__(self):
         return self.imgs.shape[0]
 
@@ -337,9 +361,10 @@ class iPhoneDataset(Dataset):
 
     def get_tracks_3d(
         self,
-        num_samples: int | None = None,
+        num_samples: int,
         step: int = 1,
         show_pbar: bool = True,
+        **kwargs
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get 3D tracks from the dataset.
 
@@ -377,20 +402,17 @@ class iPhoneDataset(Dataset):
             else candidate_frames
         ):
             curr_num_samples = self.query_tracks_2d[i].shape[0]
-            if num_samples is not None:
-                num_samples_per_frame = (
-                    int(np.floor(num_samples / num_sampled_frames))
-                    if i != candidate_frames[-1]
-                    else num_samples
-                    - (num_sampled_frames - 1)
-                    * int(np.floor(num_samples / num_sampled_frames))
+            num_samples_per_frame = (
+                int(np.floor(num_samples / num_sampled_frames))
+                if i != candidate_frames[-1]
+                else num_samples
+                - (num_sampled_frames - 1)
+                * int(np.floor(num_samples / num_sampled_frames))
+            )
+            if num_samples_per_frame < curr_num_samples:
+                track_sels = np.random.choice(
+                    curr_num_samples, (num_samples_per_frame,), replace=False
                 )
-                if num_samples_per_frame < curr_num_samples:
-                    track_sels = np.random.choice(
-                        curr_num_samples, (num_samples_per_frame,), replace=False
-                    )
-                else:
-                    track_sels = np.arange(0, curr_num_samples)
             else:
                 track_sels = np.arange(0, curr_num_samples)
             curr_tracks_2d = []
@@ -509,7 +531,7 @@ class iPhoneDataset(Dataset):
         )
 
     def get_bkgd_points(
-        self, num_samples: int | None = None
+        self, num_samples: int, **kwargs
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         H, W = self.imgs.shape[1:3]
         grid = torch.stack(
@@ -545,20 +567,17 @@ class iPhoneDataset(Dataset):
             point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
             point_colors = img[bool_mask]
             curr_num_samples = points.shape[0]
-            if num_samples is not None:
-                num_samples_per_frame = (
-                    int(np.floor(num_samples / num_sampled_frames))
-                    if i != candidate_frames[-1]
-                    else num_samples
-                    - (num_sampled_frames - 1)
-                    * int(np.floor(num_samples / num_sampled_frames))
+            num_samples_per_frame = (
+                int(np.floor(num_samples / num_sampled_frames))
+                if i != candidate_frames[-1]
+                else num_samples
+                - (num_sampled_frames - 1)
+                * int(np.floor(num_samples / num_sampled_frames))
+            )
+            if num_samples_per_frame < curr_num_samples:
+                point_sels = np.random.choice(
+                    curr_num_samples, (num_samples_per_frame,), replace=False
                 )
-                if num_samples_per_frame < curr_num_samples:
-                    point_sels = np.random.choice(
-                        curr_num_samples, (num_samples_per_frame,), replace=False
-                    )
-                else:
-                    point_sels = np.arange(0, curr_num_samples)
             else:
                 point_sels = np.arange(0, curr_num_samples)
             bkgd_points.append(points[point_sels])
@@ -654,27 +673,6 @@ class iPhoneDataset(Dataset):
 
     def preprocess(self, data):
         return data
-
-    @staticmethod
-    def train_collate_fn(batch):
-        collated = {}
-        for k in batch[0]:
-            if k not in [
-                "query_tracks_2d",
-                "target_ts",
-                "target_w2cs",
-                "target_Ks",
-                "target_tracks_2d",
-                "target_visibles",
-                "target_track_depths",
-                "target_invisibles",
-                "target_confidences",
-            ]:
-                collated[k] = default_collate([sample[k] for sample in batch])
-            else:
-                collated[k] = [sample[k] for sample in batch]
-        return collated
-
 
 class iPhoneDatasetKeypointView(Dataset):
     """Return a dataset view of the annotated keypoints."""

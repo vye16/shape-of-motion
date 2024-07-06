@@ -62,6 +62,98 @@ def parse_tapir_track_info(occlusions, expected_dist):
     return valid_visible, valid_invisible, confidence
 
 
+def get_tracks_3d_for_query_frame(
+    query_index: int,
+    query_img: torch.Tensor,
+    tracks_2d: torch.Tensor,
+    depths: torch.Tensor,
+    masks: torch.Tensor,
+    inv_Ks: torch.Tensor,
+    c2ws: torch.Tensor,
+):
+    """
+    :param query_index (int)
+    :param query_img [H, W, 3]
+    :param tracks_2d [N, T, 4]
+    :param depths [T, H, W]
+    :param masks [T, H, W]
+    :param inv_Ks [T, 3, 3]
+    :param c2ws [T, 4, 4]
+    returns (
+        tracks_3d [N, T, 3]
+        track_colors [N, 3]
+        visibles [N, T]
+        invisibles [N, T]
+        confidences [N, T]
+    )
+    """
+    T, H, W = depths.shape
+    query_img = query_img[None].permute(0, 3, 1, 2)  # (1, 3, H, W)
+    tracks_2d = tracks_2d.swapaxes(0, 1)  # (T, N, 4)
+    tracks_2d, occs, dists = (
+        tracks_2d[..., :2],
+        tracks_2d[..., 2],
+        tracks_2d[..., 3],
+    )
+    # visibles = postprocess_occlusions(occs, dists)
+    # (T, N), (T, N), (T, N)
+    visibles, invisibles, confidences = parse_tapir_track_info(occs, dists)
+    # Unproject 2D tracks to 3D.
+    # (T, 1, H, W), (T, 1, N, 2) -> (T, 1, 1, N)
+    track_depths = F.grid_sample(
+        depths[:, None],
+        normalize_coords(tracks_2d[:, None], H, W),
+        align_corners=True,
+        padding_mode="border",
+    )[:, 0, 0]
+    tracks_3d = (
+        torch.einsum(
+            "nij,npj->npi",
+            inv_Ks,
+            F.pad(tracks_2d, (0, 1), value=1.0),
+        )
+        * track_depths[..., None]
+    )
+    tracks_3d = torch.einsum("nij,npj->npi", c2ws, F.pad(tracks_3d, (0, 1), value=1.0))[
+        ..., :3
+    ]
+    # Filter out out-of-mask tracks.
+    # (T, 1, H, W), (T, 1, N, 2) -> (T, 1, 1, N)
+    is_in_masks = (
+        F.grid_sample(
+            masks[:, None],
+            normalize_coords(tracks_2d[:, None], H, W),
+            align_corners=True,
+        )[:, 0, 0]
+        == 1
+    )
+    visibles *= is_in_masks
+    invisibles *= is_in_masks
+    confidences *= is_in_masks.float()
+
+    # Get track's color from the query frame.
+    # (1, 3, H, W), (1, 1, N, 2) -> (1, 3, 1, N) -> (N, 3)
+    track_colors = F.grid_sample(
+        query_img,
+        normalize_coords(tracks_2d[query_index : query_index + 1, None], H, W),
+        align_corners=True,
+        padding_mode="border",
+    )[0, :, 0].T
+    # at least visible 5% of the time, otherwise discard
+    visible_counts = visibles.sum(0)
+    valid = visible_counts >= min(
+        int(0.05 * T),
+        visible_counts.float().quantile(0.1).item(),
+    )
+    return (
+        tracks_3d[:, valid].swapdims(0, 1),
+        track_colors[valid],
+        visibles[:, valid].swapdims(0, 1),
+        invisibles[:, valid].swapdims(0, 1),
+        confidences[:, valid].swapdims(0, 1),
+    )
+
+
 def masked_median_blur(image, mask, kernel_size=11):
     """
     Args:

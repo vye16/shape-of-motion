@@ -1,4 +1,5 @@
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
+from typing import Annotated, Union
 from tqdm import tqdm
 import yaml
 
@@ -8,12 +9,12 @@ from loguru import logger as guru
 import torch
 from torch.utils.data import DataLoader
 
-from flow3d.configs import DataConfig, SceneLRConfig, LossesConfig, OptimizerConfig
-from flow3d.data.iphone_dataset import (
-    iPhoneDataset,
-    iPhoneDatasetKeypointView,
-    iPhoneDatasetVideoView,
+from flow3d.configs import (
+    SceneLRConfig,
+    LossesConfig,
+    OptimizerConfig,
 )
+from flow3d.data import get_train_val_datasets, BaseDataset, iPhoneDataConfig, DavisDataConfig
 from flow3d.init_utils import (
     init_bg,
     init_fg_from_tracks_3d,
@@ -34,7 +35,10 @@ torch.set_float32_matmul_precision("high")
 @dataclass
 class TrainConfig:
     work_dir: str
-    data_cfg: DataConfig
+    data_cfg: Union[
+        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")],
+        Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")],
+    ]
     num_fg: int = 40_000
     num_bg: int = 100_000
     num_motion_bases: int = 10
@@ -51,7 +55,9 @@ class TrainConfig:
 
 def main(cfg: TrainConfig):
 
-    train_dataset = iPhoneDataset(**asdict(cfg.data_cfg))
+    train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
+        get_train_val_datasets(cfg.data_cfg)
+    )
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -79,28 +85,23 @@ def main(cfg: TrainConfig):
         train_dataset,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_dl_workers,
-        collate_fn=iPhoneDataset.train_collate_fn,
+        collate_fn=BaseDataset.train_collate_fn,
     )
 
-    val_img_loader = (
-        DataLoader(
-            iPhoneDataset(
-                **asdict(replace(cfg.data_cfg, split="val", load_from_cache=True))
-            )
+    validator = None
+    if (
+        train_video_view is not None
+        and val_img_dataset is not None
+        and val_kpt_dataset is not None
+    ):
+        validator = Validator(
+            model=trainer.model,
+            device=device,
+            train_loader=DataLoader(train_video_view, batch_size=1),
+            val_img_loader=DataLoader(val_img_dataset, batch_size=1),
+            val_kpt_loader=DataLoader(val_kpt_dataset, batch_size=1),
+            save_dir=cfg.work_dir,
         )
-        if train_dataset.has_validation
-        else None
-    )
-    val_kpt_loader = DataLoader(iPhoneDatasetKeypointView(train_dataset))
-
-    validator = Validator(
-        model=trainer.model,
-        device=device,
-        train_loader=DataLoader(iPhoneDatasetVideoView(train_dataset)),
-        val_img_loader=val_img_loader,
-        val_kpt_loader=val_kpt_loader,
-        save_dir=cfg.work_dir,
-    )
 
     guru.info(f"Starting training from {trainer.global_step=}")
     for epoch in (
@@ -116,20 +117,21 @@ def main(cfg: TrainConfig):
             loss = trainer.train_step(batch)
             pbar.set_description(f"Loss: {loss:.6f}")
 
-        if (epoch > 0 and epoch % cfg.validate_every == 0) or (
-            epoch == cfg.num_epochs - 1
-        ):
-            val_logs = validator.validate()
-            trainer.log_dict(val_logs)
-        if (epoch > 0 and epoch % cfg.save_videos_every == 0) or (
-            epoch == cfg.num_epochs - 1
-        ):
-            validator.save_train_videos(epoch)
+        if validator is not None:
+            if (epoch > 0 and epoch % cfg.validate_every == 0) or (
+                epoch == cfg.num_epochs - 1
+            ):
+                val_logs = validator.validate()
+                trainer.log_dict(val_logs)
+            if (epoch > 0 and epoch % cfg.save_videos_every == 0) or (
+                epoch == cfg.num_epochs - 1
+            ):
+                validator.save_train_videos(epoch)
 
 
 def initialize_and_checkpoint_model(
     cfg: TrainConfig,
-    train_dataset: iPhoneDataset,
+    train_dataset: BaseDataset,
     device: torch.device,
     ckpt_path: str,
 ):
@@ -157,7 +159,15 @@ def init_model_from_tracks(
     train_dataset, num_fg: int, num_bg: int, num_motion_bases: int
 ):
     tracks_3d = TrackObservations(*train_dataset.get_tracks_3d(num_fg))
-    assert tracks_3d.check_sizes()
+    print(
+        f"{tracks_3d.xyz.shape=} {tracks_3d.visibles.shape=} "
+        f"{tracks_3d.invisibles.shape=} {tracks_3d.confidences.shape} "
+        f"{tracks_3d.colors.shape}"
+    )
+    if not tracks_3d.check_sizes():
+        import ipdb
+
+        ipdb.set_trace()
 
     rot_type = "6d"
     cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
