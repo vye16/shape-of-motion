@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from PIL import Image
-from transformers import pipeline
+from transformers import pipeline, Pipeline
 from pycolmap import SceneManager
 import fnmatch
 import imageio.v2 as iio
@@ -16,11 +16,17 @@ from glob import glob
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-pipe = pipeline(
-    task="depth-estimation",
-    model="depth-anything/Depth-Anything-V2-Large-hf",
-    device=DEVICE,
-)
+
+models = {
+    "depth-anything": "LiheYoung/depth-anything-large-hf",
+    "depth-anything-v2": "depth-anything/Depth-Anything-V2-Large-hf",
+}
+
+
+def get_pipeline(model_name: str):
+    pipe = pipeline(task="depth-estimation", model=models[model_name], device=DEVICE)
+    print(f"{model_name} model loaded.")
+    return pipe
 
 
 def to_uint16(disp: np.ndarray):
@@ -37,7 +43,8 @@ def to_uint16(disp: np.ndarray):
     return disp_uint16
 
 
-def get_depth_anything_v2_disp(
+def get_depth_anything_disp(
+    pipe: Pipeline,
     img_file: str,
     ret_type: Literal["uint16", "float"] = "float",
 ):
@@ -56,7 +63,8 @@ def get_depth_anything_v2_disp(
         raise ValueError(f"Unknown return type {ret_type}")
 
 
-def save_depth_anything_v2_disp_from_dir(
+def save_disp_from_dir(
+    model_name: str,
     img_dir: str,
     out_dir: str,
     matching_pattern: str = "*",
@@ -68,12 +76,13 @@ def save_depth_anything_v2_disp_from_dir(
         f for f in img_files if fnmatch.fnmatch(osp.basename(f), matching_pattern)
     ]
     if osp.exists(out_dir) and len(glob(osp.join(out_dir, "*.png"))) == len(img_files):
-        print(f"Raw depth maps already computed for {img_dir}")
+        print(f"Raw {model_name} depth maps already computed for {img_dir}")
         return
 
+    pipe = get_pipeline(model_name)
     os.makedirs(out_dir, exist_ok=True)
-    for img_file in tqdm(img_files, "computing depth maps"):
-        disp = get_depth_anything_v2_disp(img_file, ret_type="uint16")
+    for img_file in tqdm(img_files, f"computing {model_name} depth maps"):
+        disp = get_depth_anything_disp(pipe, img_file, ret_type="uint16")
         out_file = osp.join(out_dir, osp.splitext(osp.basename(img_file))[0] + ".png")
         iio.imwrite(out_file, disp)
 
@@ -149,6 +158,12 @@ def align_monodepth_with_colmap(
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="depth-anything",
+        help="depth model to use, one of [depth-anything, depth-anything-v2]",
+    )
     parser.add_argument("--img_dir", type=str, required=True)
     parser.add_argument("--out_raw_dir", type=str, required=True)
     parser.add_argument("--out_aligned_dir", type=str, required=True)
@@ -157,8 +172,12 @@ def main():
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
-    save_depth_anything_v2_disp_from_dir(
-        args.img_dir, args.out_raw_dir, args.matching_pattern
+    assert args.model in [
+        "depth-anything",
+        "depth-anything-v2",
+    ], f"Unknown model {args.model}"
+    save_disp_from_dir(
+        args.model, args.img_dir, args.out_raw_dir, args.matching_pattern
     )
     align_monodepth_with_colmap(
         args.sparse_dir, args.out_raw_dir, args.out_aligned_dir, args.matching_pattern
