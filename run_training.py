@@ -5,10 +5,13 @@ import yaml
 
 import tyro
 import os
+import os.path as osp
+import numpy as np
 from loguru import logger as guru
 import torch
 from torch.utils.data import DataLoader
-
+from datetime import datetime
+import shutil
 from flow3d.configs import (
     SceneLRConfig,
     LossesConfig,
@@ -30,6 +33,19 @@ from flow3d.vis.utils import get_server
 from flow3d.data.utils import to_device
 
 torch.set_float32_matmul_precision("high")
+
+
+def set_seed(seed):
+    # Set the seed for generating random numbers
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+
+set_seed(42)
 
 
 @dataclass
@@ -54,7 +70,7 @@ class TrainConfig:
 
 
 def main(cfg: TrainConfig):
-
+    backup_code(cfg.work_dir)
     train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
         get_train_val_datasets(cfg.data_cfg)
     )
@@ -191,6 +207,17 @@ def init_model_from_tracks(
 
     tracks_3d = tracks_3d.to(device)
     return fg_params, motion_bases, bg_params, tracks_3d
+
+
+def backup_code(work_dir):
+    root_dir = osp.abspath(osp.join(osp.dirname(__file__)))
+    tracked_dirs = [
+        osp.join(root_dir, dirname) for dirname in ["flow3d", "scripts", "tests"]
+    ]
+    dst_dir = osp.join(work_dir, "code", datetime.now().strftime("%Y-%m-%d-%H%M%S"))
+    for tracked_dir in tracked_dirs:
+        if osp.exists(tracked_dir):
+            shutil.copytree(tracked_dir, osp.join(dst_dir, osp.basename(tracked_dir)))
 
 
 if __name__ == "__main__":
