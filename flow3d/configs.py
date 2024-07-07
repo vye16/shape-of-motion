@@ -28,9 +28,9 @@ class MotionLRConfig:
 
 @dataclass
 class SceneLRConfig:
-    fg: FGLRConfig = FGLRConfig()
-    bg: BGLRConfig = BGLRConfig()
-    motion_bases: MotionLRConfig = MotionLRConfig()
+    fg: FGLRConfig
+    bg: BGLRConfig
+    motion_bases: MotionLRConfig
 
 
 @dataclass
