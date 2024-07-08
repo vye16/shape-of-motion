@@ -1,5 +1,5 @@
 # Shape of Motion
-[Qianqian Wang*][https://qianqianwang68.github.io/] [Vickie Ye*][https://people.eecs.berkeley.edu/~vye/] [Hang Gao*][https://hangg7.com/] ...
+[Qianqian Wang*](https://qianqianwang68.github.io/) [Vickie Ye*](https://people.eecs.berkeley.edu/~vye/) [Hang Gao*](https://hangg7.com/) ...
 
 ## Installation
 
