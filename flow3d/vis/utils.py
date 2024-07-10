@@ -23,7 +23,7 @@ class VisManager(metaclass=Singleton):
 def get_server(port=8890) -> ViserServer:
     manager = VisManager()
     if port not in manager._servers:
-        manager._servers[port] = ViserServer(port=port)
+        manager._servers[port] = ViserServer(port=port, verbose=False)
     return manager._servers[port]
 
 

@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from loguru import logger as guru
 from nerfview import CameraState
 from pytorch_msssim import SSIM
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter  # type: ignore
 
 from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
 from flow3d.loss_utils import (

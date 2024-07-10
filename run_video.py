@@ -51,7 +51,7 @@ set_seed(42)
 
 
 @dataclass
-class TrainConfig:
+class VideoConfig:
     work_dir: str
     data: Union[
         Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")],
@@ -71,7 +71,7 @@ class TrainConfig:
     save_videos_every: int = 50
 
 
-def main(cfg: TrainConfig):
+def main(cfg: VideoConfig):
     backup_code(cfg.work_dir)
     train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
         get_train_val_datasets(cfg.data)
@@ -87,7 +87,7 @@ def main(cfg: TrainConfig):
 
     # if checkpoint exists
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
-    initialize_and_checkpoint_model(cfg, train_dataset, device, ckpt_path)
+    assert osp.exists(ckpt_path)
 
     trainer, start_epoch = Trainer.init_from_checkpoint(
         ckpt_path,
@@ -148,7 +148,7 @@ def main(cfg: TrainConfig):
 
 
 def initialize_and_checkpoint_model(
-    cfg: TrainConfig,
+    cfg: VideoConfig,
     train_dataset: BaseDataset,
     device: torch.device,
     ckpt_path: str,
@@ -221,4 +221,4 @@ def backup_code(work_dir):
 
 
 if __name__ == "__main__":
-    main(tyro.cli(TrainConfig))
+    main(tyro.cli(VideoConfig))
