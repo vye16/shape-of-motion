@@ -1,13 +1,23 @@
-## minimal example for the Shape of Motion project
+# Shape of Motion
+[Qianqian Wang*](https://qianqianwang68.github.io/) [Vickie Ye*](https://people.eecs.berkeley.edu/~vye/) [Hang Gao*](https://hangg7.com/) ...
 
-requirements
-[gsplat](https://github.com/nerfstudio-project/gsplat)
+## Installation
 
 ```
-pip install \
-    --extra-index-url=https://pypi.nvidia.com \
-    "cudf-cu11==24.2.*" "dask-cudf-cu11==24.2.*" "cuml-cu11==24.2.*" \
-    "cugraph-cu11==24.2.*" "cuspatial-cu11==24.2.*" "cuproj-cu11==24.2.*" \
-    "cuxfilter-cu11==24.2.*" "cucim-cu11==24.2.*" "pylibraft-cu11==24.2.*" \
-    "raft-dask-cu11==24.2.*"
+pip install -e .
 ```
+
+## Usage
+
+### Preprocessing
+We depend on the third-party libraries in `preproc` to generate monocular depth maps, camera estimates, and long-range 2D tracks. 
+
+### Fitting to a Video
+
+```
+python run_training.py --work-dir <OUTPUT> --data:davis --data.seq-name horsejump-low
+```
+
+## Evaluation
+
+### iPhone Dataset
