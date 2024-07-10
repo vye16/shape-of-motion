@@ -10,7 +10,6 @@ roma
 ninja
 pytorch-msssim
 fsspec
-kornia
 loguru
 --extra-index-url https://download.pytorch.org/whl/cu121
 torch==2.2.0
