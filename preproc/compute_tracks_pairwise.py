@@ -6,25 +6,24 @@ tap_dir = os.path.join(basedir, "tapnet")
 import sys
 
 sys.path.extend([tap_dir, basedir])
+import argparse
 import functools
-import haiku as hk
-import jax
-import os
 import glob
+import os
+import subprocess
+
+import haiku as hk
 import imageio
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import mediapy as media
 import numpy as np
 import tree
-import subprocess
-from tqdm import tqdm
-import jax.numpy as jnp
-import argparse
-
-from tapnet import tapir_model
 from tapir_model import QueryFeatures
-from tapnet.utils import transforms
-from tapnet.utils import viz_utils
+from tapnet import tapir_model
+from tapnet.utils import transforms, viz_utils
+from tqdm import tqdm
 
 # from google.colab import output
 # output.enable_custom_widget_manager()

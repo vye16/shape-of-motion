@@ -1,7 +1,7 @@
-from dataclasses import dataclass
 import json
 import os
 import os.path as osp
+from dataclasses import dataclass
 from glob import glob
 from itertools import product
 from typing import Literal
@@ -14,17 +14,17 @@ import torch.nn.functional as F
 from loguru import logger as guru
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from flow3d.data.base_dataset import BaseDataset
 
-from flow3d.transforms import rt_to_mat4
+from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.colmap import get_colmap_camera_params
 from flow3d.data.utils import (
+    SceneNormDict,
     masked_median_blur,
+    normal_from_depth_image,
     normalize_coords,
     parse_tapir_track_info,
-    SceneNormDict,
-    normal_from_depth_image,
 )
+from flow3d.transforms import rt_to_mat4
 
 
 @dataclass
@@ -360,11 +360,7 @@ class iPhoneDataset(BaseDataset):
     #     return self.sam_features, self.sam_original_size, self.sam_input_size
 
     def get_tracks_3d(
-        self,
-        num_samples: int,
-        step: int = 1,
-        show_pbar: bool = True,
-        **kwargs
+        self, num_samples: int, step: int = 1, show_pbar: bool = True, **kwargs
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get 3D tracks from the dataset.
 
@@ -673,6 +669,7 @@ class iPhoneDataset(BaseDataset):
 
     def preprocess(self, data):
         return data
+
 
 class iPhoneDatasetKeypointView(Dataset):
     """Return a dataset view of the annotated keypoints."""
