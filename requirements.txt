@@ -19,3 +19,5 @@ ipdb
 nerfview
 torchmetrics
 splines==0.3.2
+git+https://github.com/rmbrualla/pycolmap@cc7ea4b7301720ac29287dbe450952511b32125e
+geffnet
