@@ -2,7 +2,7 @@ import roma
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from gsplat.rendering import rasterization
+from gsplat.rendering import rasterization_2dgs
 from torch import Tensor
 
 from flow3d.params import GaussianParams, MotionBases
@@ -217,7 +217,7 @@ class SceneModel(nn.Module):
             mode = "RGB+ED"
             ds_expected["depth"] = 1
 
-        render_colors, alphas, info = rasterization(
+        (render_colors, alphas, _, _), info = rasterization_2dgs(
             means=means,
             quats=quats,
             scales=scales,
