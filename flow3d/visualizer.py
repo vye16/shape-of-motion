@@ -1,7 +1,7 @@
 import numpy as np
+import torch
 from loguru import logger as guru
 from nerfview import CameraState
-import torch
 
 from flow3d.scene_model import SceneModel
 from flow3d.vis.utils import get_server
