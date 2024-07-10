@@ -1,3 +1,4 @@
+*.pth
 outputs/
 *__pycache__*
 .vscode/
