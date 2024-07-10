@@ -4,3 +4,6 @@
 [submodule "preproc/DROID-SLAM"]
 	path = preproc/DROID-SLAM
 	url = https://github.com/princeton-vl/DROID-SLAM.git
+[submodule "preproc/UniDepth"]
+	path = preproc/UniDepth
+	url = https://github.com/lpiccinelli-eth/UniDepth.git
