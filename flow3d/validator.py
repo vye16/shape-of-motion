@@ -1,26 +1,28 @@
-from dataclasses import asdict
+import functools
 import os
 import os.path as osp
-import functools
 import time
-from tqdm import tqdm
+from dataclasses import asdict
 from typing import cast
-from nerfview import CameraState, Viewer
-import numpy as np
+
 import imageio as iio
-from loguru import logger as guru
-from pytorch_msssim import SSIM
+import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
+from loguru import logger as guru
+from nerfview import CameraState, Viewer
+from pytorch_msssim import SSIM
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
+from flow3d.data.utils import normalize_coords, to_device
 from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
-from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
-from flow3d.data.utils import to_device, normalize_coords
 from flow3d.vis.utils import (
-    make_video_divisble,
     apply_depth_colormap,
+    make_video_divisble,
     plot_correspondences,
 )
 

@@ -1,10 +1,10 @@
 import roma
 import torch
 import torch.nn as nn
-from torch import Tensor
 import torch.nn.functional as F
-
 from gsplat.rendering import rasterization
+from torch import Tensor
+
 from flow3d.params import GaussianParams, MotionBases
 
 

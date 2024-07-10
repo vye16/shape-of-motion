@@ -1,18 +1,18 @@
-from typing import Literal
+import argparse
+import fnmatch
 import os
 import os.path as osp
+from glob import glob
+from typing import Literal
+
+import cv2
+import imageio.v2 as iio
 import numpy as np
-from tqdm import tqdm
 import torch
 from PIL import Image
-from transformers import pipeline, Pipeline
 from pycolmap import SceneManager
-import fnmatch
-import imageio.v2 as iio
-import cv2
-import argparse
-from glob import glob
-
+from tqdm import tqdm
+from transformers import Pipeline, pipeline
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

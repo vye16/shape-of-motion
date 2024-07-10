@@ -1,10 +1,10 @@
 import cv2
-import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as F
 from viser import ViserServer
-import matplotlib
 
 
 class Singleton(type):

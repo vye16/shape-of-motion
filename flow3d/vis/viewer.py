@@ -1,8 +1,9 @@
+from pathlib import Path
+from typing import Callable, Literal, Optional, Tuple, Union
+
 import numpy as np
 from jaxtyping import Float32, UInt8
 from nerfview import CameraState, Viewer
-from pathlib import Path
-from typing import Callable, Literal, Optional, Tuple, Union
 from viser import Icon, ViserServer
 
 from flow3d.vis.playback_panel import add_gui_playback_group

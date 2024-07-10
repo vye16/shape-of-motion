@@ -1,15 +1,16 @@
+import os
 from dataclasses import dataclass
 from functools import partial
+from typing import Literal
+
 import imageio
-import os
-from roma import roma
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
-from typing import Literal
+from roma import roma
 from tqdm import tqdm
-from flow3d.data.base_dataset import BaseDataset
 
+from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.utils import (
     SceneNormDict,
     get_tracks_3d_for_query_frame,

@@ -1,3 +1,5 @@
 outputs/
+work_dirs/
 *__pycache__*
 .vscode/
+.envrc

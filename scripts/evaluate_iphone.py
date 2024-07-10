@@ -11,9 +11,9 @@ import roma
 import torch
 from tqdm import tqdm
 
+from flow3d.data.colmap import get_colmap_camera_params
 from flow3d.metrics import mLPIPS, mPSNR, mSSIM
 from flow3d.transforms import rt_to_mat4, solve_procrustes
-from flow3d.data.colmap import get_colmap_camera_params
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
