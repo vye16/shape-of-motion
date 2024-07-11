@@ -8,6 +8,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import tyro
+from roma import roma
+from tqdm import tqdm
+
 from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.utils import (
     SceneNormDict,
@@ -17,8 +20,6 @@ from flow3d.data.utils import (
     parse_tapir_track_info,
 )
 from flow3d.transforms import rt_to_mat4
-from roma import roma
-from tqdm import tqdm
 
 
 @dataclass

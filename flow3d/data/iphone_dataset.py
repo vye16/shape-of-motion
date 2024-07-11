@@ -12,6 +12,10 @@ import roma
 import torch
 import torch.nn.functional as F
 import tyro
+from loguru import logger as guru
+from torch.utils.data import Dataset
+from tqdm import tqdm
+
 from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.colmap import get_colmap_camera_params
 from flow3d.data.utils import (
@@ -22,9 +26,6 @@ from flow3d.data.utils import (
     parse_tapir_track_info,
 )
 from flow3d.transforms import rt_to_mat4
-from loguru import logger as guru
-from torch.utils.data import Dataset
-from tqdm import tqdm
 
 
 @dataclass
