@@ -1,5 +1,4 @@
 from dataclasses import asdict, replace
-from typing import Union
 
 from torch.utils.data import Dataset
 
@@ -14,7 +13,7 @@ from .iphone_dataset import (
 
 
 def get_train_val_datasets(
-    data_cfg: Union[iPhoneDataConfig, DavisDataConfig]
+    data_cfg: iPhoneDataConfig | DavisDataConfig,
 ) -> tuple[BaseDataset, Dataset | None, Dataset | None, Dataset | None]:
     if isinstance(data_cfg, iPhoneDataConfig):
         train_dataset = iPhoneDataset(**asdict(data_cfg))

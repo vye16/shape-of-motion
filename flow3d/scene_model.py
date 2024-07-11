@@ -23,7 +23,7 @@ class SceneModel(nn.Module):
         self.motion_bases = motion_bases
         self.bg = bg_params
         scene_scale = 1.0 if bg_params is None else bg_params.scene_scale
-        self.register_buffer("bg_scene_scale", torch.tensor(scene_scale))
+        self.register_buffer("bg_scene_scale", torch.as_tensor(scene_scale))
         self.register_buffer("Ks", Ks)
         self.register_buffer("w2cs", w2cs)
 

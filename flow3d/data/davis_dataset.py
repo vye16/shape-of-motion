@@ -7,9 +7,7 @@ import imageio
 import numpy as np
 import torch
 import torch.nn.functional as F
-from roma import roma
-from tqdm import tqdm
-
+import tyro
 from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.utils import (
     SceneNormDict,
@@ -19,6 +17,8 @@ from flow3d.data.utils import (
     parse_tapir_track_info,
 )
 from flow3d.transforms import rt_to_mat4
+from roma import roma
+from tqdm import tqdm
 
 
 @dataclass
@@ -30,7 +30,7 @@ class DavisDataConfig:
     res: str = "480p"
     depth_type: Literal["depth_anything", "unidepth"] = "unidepth"
     camera_type: Literal["droid_recon"] = "droid_recon"
-    scene_norm_dict: SceneNormDict | None = None
+    scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     num_targets_per_frame: int = 1
     load_from_cache: bool = False
 
@@ -48,9 +48,10 @@ class DavisDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         num_targets_per_frame: int = 1,
         load_from_cache: bool = False,
-        **kwargs,
+        **_,
     ):
         super().__init__()
+
         self.seq_name = seq_name
         self.root_dir = root_dir
         self.res = res
@@ -119,6 +120,9 @@ class DavisDataset(BaseDataset):
 
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
+
+    def get_img_wh(self) -> tuple[int, int]:
+        return self.get_image(0).shape[1::-1]
 
     def get_image(self, index):
         if self.imgs[index] is None:

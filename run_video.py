@@ -1,223 +1,247 @@
 import os
-import os.path as osp
-import shutil
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Annotated, Union
+from typing import Annotated, Callable, cast
 
+import imageio as iio
 import numpy as np
 import torch
+import torch.nn.functional as F
 import tyro
 import yaml
 from loguru import logger as guru
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
-from flow3d.data import (
-    BaseDataset,
-    DavisDataConfig,
-    get_train_val_datasets,
-    iPhoneDataConfig,
+from flow3d.data import DavisDataConfig, get_train_val_datasets, iPhoneDataConfig
+from flow3d.renderer import Renderer
+from flow3d.trajectories import (
+    get_arc_w2cs,
+    get_avg_w2c,
+    get_lemniscate_w2cs,
+    get_lookat,
+    get_spiral_w2cs,
+    get_wander_w2cs,
 )
-from flow3d.data.utils import to_device
-from flow3d.init_utils import (
-    init_bg,
-    init_fg_from_tracks_3d,
-    init_motion_params_with_procrustes,
-    run_initial_optim,
-    vis_init_params,
-)
-from flow3d.scene_model import SceneModel
-from flow3d.tensor_dataclass import StaticObservations, TrackObservations
-from flow3d.trainer import Trainer
-from flow3d.validator import Validator
-from flow3d.vis.utils import get_server
+from flow3d.vis.utils import make_video_divisble
 
 torch.set_float32_matmul_precision("high")
 
 
-def set_seed(seed):
-    # Set the seed for generating random numbers
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+@dataclass
+class BaseTrajectoryConfig:
+    num_frames: int = tyro.MISSING
+    ref_t: int = -1
+    _fn: tyro.conf.SuppressFixed[Callable] = tyro.MISSING
 
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+    def get_w2cs(self, **kwargs) -> torch.Tensor:
+        cfg_kwargs = asdict(self)
+        _fn = cfg_kwargs.pop("_fn")
+        return _fn(**kwargs, **cfg_kwargs)
 
 
-set_seed(42)
+@dataclass
+class ArcTrajectoryConfig(BaseTrajectoryConfig):
+    num_frames: int = 120
+    degree: float = 15.0
+    _fn: tyro.conf.SuppressFixed[Callable] = get_arc_w2cs
+
+
+@dataclass
+class LemniscateTrajectoryConfig(BaseTrajectoryConfig):
+    num_frames: int = 240
+    degree: float = 15.0
+    _fn: tyro.conf.SuppressFixed[Callable] = get_lemniscate_w2cs
+
+
+@dataclass
+class SpiralTrajectoryConfig(BaseTrajectoryConfig):
+    num_frames: int = 240
+    rads: float = 0.5
+    zrate: float = 0.5
+    rots: int = 2
+    _fn: tyro.conf.SuppressFixed[Callable] = get_spiral_w2cs
+
+
+@dataclass
+class WanderTrajectoryConfig(BaseTrajectoryConfig):
+    num_frames: int = 120
+    _fn: tyro.conf.SuppressFixed[Callable] = get_wander_w2cs
+
+
+@dataclass
+class FixedTrajectoryConfig(BaseTrajectoryConfig):
+    _fn: tyro.conf.SuppressFixed[Callable] = lambda ref_w2c, **_: ref_w2c[None]
+
+
+@dataclass
+class BaseTimeConfig:
+    _fn: tyro.conf.SuppressFixed[Callable] = tyro.MISSING
+
+    def get_ts(self, **kwargs) -> torch.Tensor:
+        cfg_kwargs = asdict(self)
+        _fn = cfg_kwargs.pop("_fn")
+        return _fn(**kwargs, **cfg_kwargs)
+
+
+@dataclass
+class ReplayTimeConfig(BaseTimeConfig):
+    _fn: tyro.conf.SuppressFixed[Callable] = (
+        lambda num_frames, traj_frames, device, **_: F.pad(
+            torch.arange(num_frames, device=device)[:traj_frames],
+            (0, max(traj_frames - num_frames, 0)),
+            value=num_frames - 1,
+        )
+    )
+
+
+@dataclass
+class FixedTimeConfig(BaseTimeConfig):
+    t: int = 0
+    _fn: tyro.conf.SuppressFixed[Callable] = (
+        lambda t, num_frames, traj_frames, device, **_: torch.tensor(
+            [min(t, num_frames - 1)], device=device
+        ).expand(traj_frames)
+    )
 
 
 @dataclass
 class VideoConfig:
     work_dir: str
-    data: Union[
-        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")],
-        Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")],
-    ]
-    lr: SceneLRConfig
-    loss: LossesConfig
-    optim: OptimizerConfig
-    num_fg: int = 40_000
-    num_bg: int = 100_000
-    num_motion_bases: int = 10
-    num_epochs: int = 500
-    port: int = 8890
-    batch_size: int = 8
-    num_dl_workers: int = 4
-    validate_every: int = 50
-    save_videos_every: int = 50
+    data: (
+        Annotated[
+            iPhoneDataConfig,
+            tyro.conf.subcommand(
+                name="iphone",
+                default=iPhoneDataConfig(
+                    data_dir=tyro.MISSING,
+                    load_from_cache=True,
+                    skip_load_imgs=True,
+                ),
+            ),
+        ]
+        | Annotated[
+            DavisDataConfig,
+            tyro.conf.subcommand(
+                name="davis",
+                default=DavisDataConfig(
+                    seq_name=tyro.MISSING,
+                    root_dir=tyro.MISSING,
+                    load_from_cache=True,
+                ),
+            ),
+        ]
+    )
+    trajectory: (
+        Annotated[ArcTrajectoryConfig, tyro.conf.subcommand(name="arc")]
+        | Annotated[LemniscateTrajectoryConfig, tyro.conf.subcommand(name="lemniscate")]
+        | Annotated[SpiralTrajectoryConfig, tyro.conf.subcommand(name="spiral")]
+        | Annotated[WanderTrajectoryConfig, tyro.conf.subcommand(name="wander")]
+        | Annotated[FixedTrajectoryConfig, tyro.conf.subcommand(name="fixed")]
+    )
+    time: (
+        Annotated[ReplayTimeConfig, tyro.conf.subcommand(name="replay")]
+        | Annotated[FixedTimeConfig, tyro.conf.subcommand(name="fixed")]
+    )
+    fps: float = 60.0
 
 
 def main(cfg: VideoConfig):
-    backup_code(cfg.work_dir)
-    train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
-        get_train_val_datasets(cfg.data)
-    )
+    train_dataset = get_train_val_datasets(cfg.data)[0]
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # save config
-    os.makedirs(cfg.work_dir, exist_ok=True)
-    with open(f"{cfg.work_dir}/cfg.yaml", "w") as f:
-        yaml.dump(asdict(cfg), f, default_flow_style=False)
-
-    # if checkpoint exists
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
-    assert osp.exists(ckpt_path)
+    assert os.path.exists(ckpt_path)
 
-    trainer, start_epoch = Trainer.init_from_checkpoint(
+    renderer = Renderer.init_from_checkpoint(
         ckpt_path,
         device,
-        cfg.lr,
-        cfg.loss,
-        cfg.optim,
         work_dir=cfg.work_dir,
-        port=cfg.port,
+        port=None,
     )
+    assert train_dataset.num_frames == renderer.num_frames
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=cfg.batch_size,
-        num_workers=cfg.num_dl_workers,
-        collate_fn=BaseDataset.train_collate_fn,
+    guru.info(f"Rendering video from {renderer.global_step=}")
+
+    train_w2cs = train_dataset.get_w2cs().to(device)
+    avg_w2c = get_avg_w2c(train_w2cs)
+    train_c2ws = torch.linalg.inv(train_w2cs)
+    lookat = get_lookat(train_c2ws[:, :3, -1], train_c2ws[:, :3, 2])
+    up = torch.tensor([0.0, 0.0, 1.0], device=device)
+    K = train_dataset.get_Ks()[0].to(device)
+    img_wh = train_dataset.get_img_wh()
+
+    w2cs = cfg.trajectory.get_w2cs(
+        ref_w2c=(
+            avg_w2c
+            if cfg.trajectory.ref_t < 0
+            else train_w2cs[min(cfg.trajectory.ref_t, train_dataset.num_frames - 1)]
+        ),
+        lookat=lookat,
+        up=up,
     )
-
-    validator = None
-    if (
-        train_video_view is not None
-        and val_img_dataset is not None
-        and val_kpt_dataset is not None
-    ):
-        validator = Validator(
-            model=trainer.model,
-            device=device,
-            train_loader=DataLoader(train_video_view, batch_size=1),
-            val_img_loader=DataLoader(val_img_dataset, batch_size=1),
-            val_kpt_loader=DataLoader(val_kpt_dataset, batch_size=1),
-            save_dir=cfg.work_dir,
-        )
-
-    guru.info(f"Starting training from {trainer.global_step=}")
-    for epoch in (
-        pbar := tqdm(
-            range(start_epoch, cfg.num_epochs),
-            initial=start_epoch,
-            total=cfg.num_epochs,
-        )
-    ):
-        trainer.set_epoch(epoch)
-        for batch in train_loader:
-            batch = to_device(batch, device)
-            loss = trainer.train_step(batch)
-            pbar.set_description(f"Loss: {loss:.6f}")
-
-        if validator is not None:
-            if (epoch > 0 and epoch % cfg.validate_every == 0) or (
-                epoch == cfg.num_epochs - 1
-            ):
-                val_logs = validator.validate()
-                trainer.log_dict(val_logs)
-            if (epoch > 0 and epoch % cfg.save_videos_every == 0) or (
-                epoch == cfg.num_epochs - 1
-            ):
-                validator.save_train_videos(epoch)
-
-
-def initialize_and_checkpoint_model(
-    cfg: VideoConfig,
-    train_dataset: BaseDataset,
-    device: torch.device,
-    ckpt_path: str,
-):
-    if os.path.exists(ckpt_path):
-        guru.info(f"model checkpoint exists at {ckpt_path}")
-        return
-
-    fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
-        train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases
+    ts = cfg.time.get_ts(
+        num_frames=renderer.num_frames,
+        traj_frames=cfg.trajectory.num_frames,
+        device=device,
     )
-    # run initial optimization
-    Ks = train_dataset.get_Ks().to(device)
-    w2cs = train_dataset.get_w2cs().to(device)
-    run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
-    server = get_server(port=cfg.port)
-    vis_init_params(server, fg_params, motion_bases)
-    model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
+    assert len(w2cs) == len(ts)
 
-    guru.info(f"Saving initialization to {ckpt_path}")
-    os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
-    torch.save({"model": model.state_dict(), "epoch": 0, "global_step": 0}, ckpt_path)
+    #  import viser.transforms as vt
 
+    #  from flow3d.vis.utils import get_server
 
-def init_model_from_tracks(
-    train_dataset, num_fg: int, num_bg: int, num_motion_bases: int
-):
-    tracks_3d = TrackObservations(*train_dataset.get_tracks_3d(num_fg))
-    print(
-        f"{tracks_3d.xyz.shape=} {tracks_3d.visibles.shape=} "
-        f"{tracks_3d.invisibles.shape=} {tracks_3d.confidences.shape} "
-        f"{tracks_3d.colors.shape}"
-    )
-    if not tracks_3d.check_sizes():
-        import ipdb
+    #  server = get_server(port=30038)
+    #  for i, train_w2c in enumerate(train_w2cs):
+    #      train_c2w = torch.linalg.inv(train_w2c).cpu().numpy()
+    #      server.scene.add_camera_frustum(
+    #          f"/train_camera/{i:03d}",
+    #          np.pi / 4,
+    #          1.0,
+    #          0.002,
+    #          (0, 0, 0),
+    #          wxyz=vt.SO3.from_matrix(train_c2w[:3, :3]).wxyz,
+    #          position=train_c2w[:3, -1],
+    #      )
+    #  for i, w2c in enumerate(w2cs):
+    #      c2w = torch.linalg.inv(w2c).cpu().numpy()
+    #      server.scene.add_camera_frustum(
+    #          f"/camera/{i:03d}",
+    #          np.pi / 4,
+    #          1.0,
+    #          0.002,
+    #          (255, 0, 0),
+    #          wxyz=vt.SO3.from_matrix(c2w[:3, :3]).wxyz,
+    #          position=c2w[:3, -1],
+    #      )
+    #  avg_c2w = torch.linalg.inv(avg_w2c).cpu().numpy()
+    #  server.scene.add_camera_frustum(
+    #      f"/ref_camera",
+    #      np.pi / 4,
+    #      1.0,
+    #      0.03,
+    #      (0, 0, 255),
+    #      wxyz=vt.SO3.from_matrix(avg_c2w[:3, :3]).wxyz,
+    #      position=avg_c2w[:3, -1],
+    #  )
+    #  __import__("ipdb").set_trace()
 
-        ipdb.set_trace()
+    video = []
+    for w2c, t in zip(tqdm(w2cs), ts):
+        with torch.inference_mode():
+            img = renderer.model.render(int(t.item()), w2c[None], K[None], img_wh)[
+                "img"
+            ][0]
+        img = (img.cpu().numpy() * 255.0).astype(np.uint8)
+        video.append(img)
+    video = np.stack(video, 0)
 
-    rot_type = "6d"
-    cano_t = int(tracks_3d.visibles.sum(dim=0).argmax().item())
-    guru.info(f"{cano_t=} {num_fg=} {num_bg=} {num_motion_bases=}")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-        tracks_3d, num_motion_bases, rot_type, cano_t
-    )
-    motion_bases = motion_bases.to(device)
-
-    fg_params = init_fg_from_tracks_3d(cano_t, tracks_3d, motion_coefs)
-    fg_params = fg_params.to(device)
-
-    bg_params = None
-    if num_bg > 0:
-        bg_points = StaticObservations(*train_dataset.get_bkgd_points(num_bg))
-        assert bg_points.check_sizes()
-        bg_params = init_bg(bg_points)
-        bg_params = bg_params.to(device)
-
-    tracks_3d = tracks_3d.to(device)
-    return fg_params, motion_bases, bg_params, tracks_3d
-
-
-def backup_code(work_dir):
-    root_dir = osp.abspath(osp.join(osp.dirname(__file__)))
-    tracked_dirs = [osp.join(root_dir, dirname) for dirname in ["flow3d", "scripts"]]
-    dst_dir = osp.join(work_dir, "code", datetime.now().strftime("%Y-%m-%d-%H%M%S"))
-    for tracked_dir in tracked_dirs:
-        if osp.exists(tracked_dir):
-            shutil.copytree(tracked_dir, osp.join(dst_dir, osp.basename(tracked_dir)))
+    video_dir = f"{cfg.work_dir}/videos/{datetime.now().strftime('%Y-%m-%d-%H%M%S')}"
+    os.makedirs(video_dir, exist_ok=True)
+    iio.mimwrite(f"{video_dir}/video.mp4", make_video_divisble(video), fps=cfg.fps)
+    with open(f"{video_dir}/cfg.yaml", "w") as f:
+        yaml.dump(asdict(cfg), f, default_flow_style=False)
 
 
 if __name__ == "__main__":

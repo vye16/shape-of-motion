@@ -8,27 +8,44 @@ from flow3d.vis.utils import get_server
 from flow3d.vis.viewer import DynamicViewer
 
 
-class Visualizer:
+class Renderer:
     def __init__(
-        self, model: SceneModel, device: torch.device, port: int, work_dir: str
+        self,
+        model: SceneModel,
+        device: torch.device,
+        # Logging.
+        work_dir: str,
+        port: int | None = None,
     ):
         self.device = device
+
         self.model = model
-        server = get_server(port=port)
-        self.viewer = DynamicViewer(
-            server, self.render_fn, model.num_frames, work_dir, mode="rendering"
-        )
+        self.num_frames = model.num_frames
+
+        self.work_dir = work_dir
+        self.global_step = 0
+        self.epoch = 0
+
+        self.viewer = None
+        if port is not None:
+            server = get_server(port=port)
+            self.viewer = DynamicViewer(
+                server, self.render_fn, model.num_frames, work_dir, mode="rendering"
+            )
 
     @staticmethod
-    def load_model_from_checkpoint(
+    def init_from_checkpoint(
         path: str, device: torch.device, *args, **kwargs
-    ) -> SceneModel:
+    ) -> "Renderer":
         guru.info(f"Loading checkpoint from {path}")
         ckpt = torch.load(path)
         state_dict = ckpt["model"]
         model = SceneModel.init_from_state_dict(state_dict)
         model = model.to(device)
-        return model
+        renderer = Renderer(model, device, *args, **kwargs)
+        renderer.global_step = ckpt.get("global_step", 0)
+        renderer.epoch = ckpt.get("epoch", 0)
+        return renderer
 
     @torch.inference_mode()
     def render_fn(self, camera_state: CameraState, img_wh: tuple[int, int]):

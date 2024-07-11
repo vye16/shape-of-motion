@@ -16,6 +16,9 @@ class BaseDataset(Dataset):
     def get_Ks(self) -> torch.Tensor: ...
 
     @abstractmethod
+    def get_img_wh(self) -> tuple[int, int]: ...
+
+    @abstractmethod
     def get_tracks_3d(
         self, num_samples: int, **kwargs
     ) -> tuple[

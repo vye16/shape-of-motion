@@ -11,10 +11,7 @@ import numpy as np
 import roma
 import torch
 import torch.nn.functional as F
-from loguru import logger as guru
-from torch.utils.data import Dataset
-from tqdm import tqdm
-
+import tyro
 from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.colmap import get_colmap_camera_params
 from flow3d.data.utils import (
@@ -25,6 +22,9 @@ from flow3d.data.utils import (
     parse_tapir_track_info,
 )
 from flow3d.transforms import rt_to_mat4
+from loguru import logger as guru
+from torch.utils.data import Dataset
+from tqdm import tqdm
 
 
 @dataclass
@@ -42,7 +42,7 @@ class iPhoneDataConfig:
     camera_type: Literal["original", "refined"] = "refined"
     use_median_filter: bool = False
     num_targets_per_frame: int = 1
-    scene_norm_dict: SceneNormDict | None = None
+    scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     load_from_cache: bool = False
     skip_load_imgs: bool = False
 
@@ -67,9 +67,9 @@ class iPhoneDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         load_from_cache: bool = False,
         skip_load_imgs: bool = False,
-        **kwargs,
+        **_,
     ):
-        super().__init__(**kwargs)
+        super().__init__()
 
         self.data_dir = data_dir
         self.training = split == "train"
@@ -355,6 +355,11 @@ class iPhoneDataset(BaseDataset):
 
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
+
+    def get_img_wh(self) -> tuple[int, int]:
+        return iio.imread(
+            osp.join(self.data_dir, f"rgb/{self.factor}x/{self.frame_names[0]}.png")
+        ).shape[1::-1]
 
     # def get_sam_features(self) -> list[torch.Tensor, tuple[int, int], tuple[int, int]]:
     #     return self.sam_features, self.sam_original_size, self.sam_input_size

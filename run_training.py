@@ -3,7 +3,7 @@ import os.path as osp
 import shutil
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Annotated, Union
+from typing import Annotated
 
 import numpy as np
 import torch
@@ -53,10 +53,10 @@ set_seed(42)
 @dataclass
 class TrainConfig:
     work_dir: str
-    data: Union[
-        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")],
-        Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")],
-    ]
+    data: (
+        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")]
+        | Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")]
+    )
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
