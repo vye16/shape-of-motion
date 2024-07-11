@@ -30,7 +30,6 @@ import splines.quaternion
 import viser
 import viser.transforms as tf
 
-
 VISER_SCALE_RATIO = 10.0
 
 

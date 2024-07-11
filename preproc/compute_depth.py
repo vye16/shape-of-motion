@@ -1,16 +1,17 @@
-from typing import Literal
+import argparse
+import fnmatch
 import os
 import os.path as osp
+from glob import glob
+from typing import Literal
+
+import cv2
+import imageio.v2 as iio
 import numpy as np
-from tqdm import tqdm
 import torch
 from PIL import Image
 from transformers import pipeline, Pipeline
-import fnmatch
-import imageio.v2 as iio
-import cv2
-import argparse
-from glob import glob
+from tqdm import tqdm
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -235,8 +236,8 @@ if __name__ == "__main__":
     """ example usage for iphone dataset:
     python compute_depth.py \
         --img_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/rgb/1x \
-        --out_raw_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/depth_anything_v2 \
-        --out_aligned_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/aligned_depth_anything_v2 \
+        --out_raw_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/depth_anything_v2/1x \
+        --out_aligned_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/aligned_depth_anything_v2/1x \
         --sparse_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/colmap/sparse \
         --matching_pattern "0_*"
     """

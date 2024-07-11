@@ -1,28 +1,27 @@
+import os
 import sys
 
-import os
 basedir = os.path.dirname(os.path.abspath(__file__))
 rootdir = os.path.dirname(basedir)
 src_dir = os.path.join(basedir, "DROID-SLAM")
 droid_dir = os.path.join(src_dir, "droid_slam")
 sys.path.extend([src_dir, droid_dir])
 
+import argparse
+import glob
 import json
-from tqdm import tqdm
+import time
+
+import cv2
+import droid_backends
+import imageio.v2 as iio
 import numpy as np
 import torch
-from lietorch import SE3
-import cv2
-import glob
-import time
-import argparse
-import imageio.v2 as iio
-
-from torch.multiprocessing import Process
-from droid import Droid
-import droid_backends
-
 import torch.nn.functional as F
+from droid import Droid
+from lietorch import SE3
+from torch.multiprocessing import Process
+from tqdm import tqdm
 
 
 def show_image(image):
@@ -93,7 +92,9 @@ def image_stream(image_dir, calib_path, stride, depth_dir: str | None = None):
             yield t, image[None], intrins
 
 
-def save_reconstruction(droid, traj_est, out_path, filter_thresh: float = 0.5, vis: bool = False):
+def save_reconstruction(
+    droid, traj_est, out_path, filter_thresh: float = 0.5, vis: bool = False
+):
 
     from pathlib import Path
 
@@ -116,7 +117,9 @@ def save_reconstruction(droid, traj_est, out_path, filter_thresh: float = 0.5, v
     )
     map_c2w = SE3(poses).inv().data.cpu().numpy()
     masks = masks.cpu().numpy()
-    images = video.images[:T].cpu()[:, [2, 1, 0], 3::8, 3::8].permute(0, 2, 3, 1) / 255.0
+    images = (
+        video.images[:T].cpu()[:, [2, 1, 0], 3::8, 3::8].permute(0, 2, 3, 1) / 255.0
+    )
     images = images.numpy()
     img_shape = images.shape[1:3]
     disps = disps.cpu().numpy()

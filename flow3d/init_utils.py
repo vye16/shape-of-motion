@@ -1,38 +1,32 @@
 import time
+from typing import Literal
+
 import cupy as cp
-from cuml import HDBSCAN, KMeans
 import imageio.v3 as iio
-from matplotlib.pyplot import get_cmap
 import numpy as np
 
 # from pytorch3d.ops import sample_farthest_points
 import roma
 import torch
-from tqdm import tqdm
-from loguru import logger as guru
 import torch.nn.functional as F
-from typing import Literal
-
+from cuml import HDBSCAN, KMeans
+from loguru import logger as guru
+from matplotlib.pyplot import get_cmap
+from tqdm import tqdm
 from viser import ViserServer
+
 from flow3d.loss_utils import (
     compute_accel_loss,
     compute_se3_smoothness_loss,
     compute_z_acc_loss,
-    masked_l1_loss,
     get_weights_for_procrustes,
     knn,
+    masked_l1_loss,
 )
 from flow3d.params import GaussianParams, MotionBases
-from flow3d.tensor_dataclass import (
-    StaticObservations,
-    TrackObservations,
-)
+from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.transforms import cont_6d_to_rmat, rt_to_mat4, solve_procrustes
-from flow3d.vis.utils import (
-    draw_keypoints_video,
-    get_server,
-    project_2d_tracks,
-)
+from flow3d.vis.utils import draw_keypoints_video, get_server, project_2d_tracks
 
 
 def init_fg_from_tracks_3d(

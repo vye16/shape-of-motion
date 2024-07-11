@@ -1,20 +1,19 @@
 from dataclasses import asdict, replace
-from typing import Union
 
 from torch.utils.data import Dataset
 
 from .base_dataset import BaseDataset
+from .davis_dataset import DavisDataConfig, DavisDataset
 from .iphone_dataset import (
     iPhoneDataConfig,
     iPhoneDataset,
     iPhoneDatasetKeypointView,
     iPhoneDatasetVideoView,
 )
-from .davis_dataset import DavisDataConfig, DavisDataset
 
 
 def get_train_val_datasets(
-        data_cfg: Union[iPhoneDataConfig, DavisDataConfig], load_val:bool
+    data_cfg: iPhoneDataConfig | DavisDataConfig, load_val: bool
 ) -> tuple[BaseDataset, Dataset | None, Dataset | None, Dataset | None]:
     train_video_view = None
     val_img_dataset = None

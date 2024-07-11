@@ -1,7 +1,7 @@
-import os
 import argparse
-from concurrent.futures import ProcessPoolExecutor
+import os
 import subprocess
+from concurrent.futures import ProcessPoolExecutor
 
 
 def main(args):

@@ -1,10 +1,10 @@
+from typing import List, Optional, Tuple, TypedDict
+
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.nn.modules.utils import _pair, _quadruple
-
-from typing import List, Optional, Tuple, TypedDict
 
 
 class SceneNormDict(TypedDict):

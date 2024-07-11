@@ -1,4 +1,5 @@
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -44,7 +45,7 @@ class GaussianParams(nn.Module):
         if scene_center is None:
             scene_center = torch.zeros(3, device=means.device)
         self.register_buffer("scene_center", scene_center)
-        self.register_buffer("scene_scale", torch.tensor(scene_scale))
+        self.register_buffer("scene_scale", torch.as_tensor(scene_scale))
 
     @staticmethod
     def init_from_state_dict(state_dict, prefix="params."):

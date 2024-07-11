@@ -1,9 +1,10 @@
-from pathlib import Path
-import struct
-from typing import Dict, Union
-import numpy as np
 import os
+import struct
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Union
+
+import numpy as np
 
 
 def get_colmap_camera_params(colmap_dir, img_files):

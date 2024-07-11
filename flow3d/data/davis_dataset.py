@@ -1,6 +1,8 @@
+import os
 from dataclasses import dataclass
 from functools import partial
 import time
+import tyro
 import imageio
 import cv2
 import os
@@ -11,12 +13,11 @@ import numpy as np
 from loguru import logger as guru
 from typing import Literal, cast
 from tqdm import tqdm
-from flow3d.data.base_dataset import BaseDataset
 
+from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.utils import (
     SceneNormDict,
     get_tracks_3d_for_query_frame,
-    masked_median_blur,
     median_filter_2d,
     normal_from_depth_image,
     normalize_coords,
@@ -41,7 +42,7 @@ class DavisDataConfig:
         "unidepth_disp",
     ] = "aligned_depth_anything"
     camera_type: Literal["droid_recon"] = "droid_recon"
-    scene_norm_dict: SceneNormDict | None = None
+    scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     num_targets_per_frame: int = 1
     load_from_cache: bool = False
 
@@ -65,9 +66,10 @@ class DavisDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         num_targets_per_frame: int = 1,
         load_from_cache: bool = False,
-        **kwargs,
+        **_,
     ):
         super().__init__()
+
         self.seq_name = seq_name
         self.root_dir = root_dir
         self.res = res
@@ -144,6 +146,9 @@ class DavisDataset(BaseDataset):
 
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
+
+    def get_img_wh(self) -> tuple[int, int]:
+        return self.get_image(0).shape[1::-1]
 
     def get_image(self, index) -> torch.Tensor:
         if self.imgs[index] is None:

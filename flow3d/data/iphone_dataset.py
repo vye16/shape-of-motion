@@ -1,7 +1,7 @@
-from dataclasses import dataclass
 import json
 import os
 import os.path as osp
+from dataclasses import dataclass
 from glob import glob
 from itertools import product
 from typing import Literal
@@ -11,20 +11,21 @@ import numpy as np
 import roma
 import torch
 import torch.nn.functional as F
+import tyro
 from loguru import logger as guru
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from flow3d.data.base_dataset import BaseDataset
 
-from flow3d.transforms import rt_to_mat4
+from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.colmap import get_colmap_camera_params
 from flow3d.data.utils import (
+    SceneNormDict,
     masked_median_blur,
+    normal_from_depth_image,
     normalize_coords,
     parse_tapir_track_info,
-    SceneNormDict,
-    normal_from_depth_image,
 )
+from flow3d.transforms import rt_to_mat4
 
 
 @dataclass
@@ -42,7 +43,7 @@ class iPhoneDataConfig:
     camera_type: Literal["original", "refined"] = "refined"
     use_median_filter: bool = False
     num_targets_per_frame: int = 1
-    scene_norm_dict: SceneNormDict | None = None
+    scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     load_from_cache: bool = False
     skip_load_imgs: bool = False
 
@@ -67,9 +68,9 @@ class iPhoneDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         load_from_cache: bool = False,
         skip_load_imgs: bool = False,
-        **kwargs,
+        **_,
     ):
-        super().__init__(**kwargs)
+        super().__init__()
 
         self.data_dir = data_dir
         self.training = split == "train"
@@ -365,12 +366,16 @@ class iPhoneDataset(BaseDataset):
     def get_masks(self, index: int) -> torch.Tensor:
         return self.masks[index]
 
+    def get_img_wh(self) -> tuple[int, int]:
+        return iio.imread(
+            osp.join(self.data_dir, f"rgb/{self.factor}x/{self.frame_names[0]}.png")
+        ).shape[1::-1]
+
+    # def get_sam_features(self) -> list[torch.Tensor, tuple[int, int], tuple[int, int]]:
+    #     return self.sam_features, self.sam_original_size, self.sam_input_size
+
     def get_tracks_3d(
-        self,
-        num_samples: int,
-        step: int = 1,
-        show_pbar: bool = True,
-        **kwargs
+        self, num_samples: int, step: int = 1, show_pbar: bool = True, **kwargs
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Get 3D tracks from the dataset.
 
@@ -679,6 +684,7 @@ class iPhoneDataset(BaseDataset):
 
     def preprocess(self, data):
         return data
+
 
 class iPhoneDatasetKeypointView(Dataset):
     """Return a dataset view of the annotated keypoints."""

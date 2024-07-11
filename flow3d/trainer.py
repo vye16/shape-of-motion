@@ -1,23 +1,25 @@
-from dataclasses import asdict
 import functools
 import time
+from dataclasses import asdict
 from typing import cast
-from nerfview import CameraState
+
 import numpy as np
-from loguru import logger as guru
-from pytorch_msssim import SSIM
 import torch
-from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
+from loguru import logger as guru
+from nerfview import CameraState
+from pytorch_msssim import SSIM
+from torch.utils.tensorboard import SummaryWriter  # type: ignore
+
+from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
 from flow3d.loss_utils import (
     compute_gradient_loss,
-    masked_l1_loss,
-    compute_z_acc_loss,
     compute_se3_smoothness_loss,
+    compute_z_acc_loss,
+    masked_l1_loss,
 )
 from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
-from flow3d.configs import SceneLRConfig, LossesConfig, OptimizerConfig
 from flow3d.vis.utils import get_server
 from flow3d.vis.viewer import DynamicViewer
 

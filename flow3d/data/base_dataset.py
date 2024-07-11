@@ -1,5 +1,6 @@
-import torch
 from abc import abstractmethod
+
+import torch
 from torch.utils.data import Dataset, default_collate
 
 
@@ -22,6 +23,8 @@ class BaseDataset(Dataset):
 
     @abstractmethod
     def get_mask(self, index: int) -> torch.Tensor: ...
+
+    def get_img_wh(self) -> tuple[int, int]: ...
 
     @abstractmethod
     def get_tracks_3d(

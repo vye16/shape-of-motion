@@ -1,28 +1,26 @@
-from dataclasses import asdict, dataclass
-from datetime import datetime
 import os
 import os.path as osp
-import numpy as np
-from loguru import logger as guru
 import shutil
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from typing import Annotated
+
+import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from typing import Annotated, Union
-from tqdm import tqdm
 import tyro
 import yaml
+from loguru import logger as guru
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from flow3d.configs import (
-    SceneLRConfig,
-    LossesConfig,
-    OptimizerConfig,
-)
+from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
 from flow3d.data import (
-    get_train_val_datasets,
     BaseDataset,
-    iPhoneDataConfig,
     DavisDataConfig,
+    get_train_val_datasets,
+    iPhoneDataConfig,
 )
+from flow3d.data.utils import to_device
 from flow3d.init_utils import (
     init_bg,
     init_fg_from_tracks_3d,
@@ -31,11 +29,10 @@ from flow3d.init_utils import (
     vis_init_params,
 )
 from flow3d.scene_model import SceneModel
+from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.trainer import Trainer
 from flow3d.validator import Validator
-from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.vis.utils import get_server
-from flow3d.data.utils import to_device
 
 torch.set_float32_matmul_precision("high")
 
@@ -56,10 +53,10 @@ set_seed(42)
 @dataclass
 class TrainConfig:
     work_dir: str
-    data: Union[
-        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")],
-        Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")],
-    ]
+    data: (
+        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")]
+        | Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")]
+    )
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
@@ -171,7 +168,7 @@ def initialize_and_checkpoint_model(
     Ks = train_dataset.get_Ks().to(device)
     w2cs = train_dataset.get_w2cs().to(device)
     run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
-    server = get_server(port=port)
+    server = get_server(port=cfg.port)
     vis_init_params(server, fg_params, motion_bases)
     model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
 
@@ -224,9 +221,7 @@ def init_model_from_tracks(
 
 def backup_code(work_dir):
     root_dir = osp.abspath(osp.join(osp.dirname(__file__)))
-    tracked_dirs = [
-        osp.join(root_dir, dirname) for dirname in ["flow3d", "scripts", "tests"]
-    ]
+    tracked_dirs = [osp.join(root_dir, dirname) for dirname in ["flow3d", "scripts"]]
     dst_dir = osp.join(work_dir, "code", datetime.now().strftime("%Y-%m-%d-%H%M%S"))
     for tracked_dir in tracked_dirs:
         if osp.exists(tracked_dir):
