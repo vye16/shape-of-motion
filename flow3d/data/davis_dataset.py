@@ -1,23 +1,29 @@
 from dataclasses import dataclass
 from functools import partial
+import time
 import imageio
+import cv2
 import os
 from roma import roma
 import torch
 import torch.nn.functional as F
 import numpy as np
-from typing import Literal
+from loguru import logger as guru
+from typing import Literal, cast
 from tqdm import tqdm
 from flow3d.data.base_dataset import BaseDataset
 
 from flow3d.data.utils import (
     SceneNormDict,
     get_tracks_3d_for_query_frame,
+    masked_median_blur,
+    median_filter_2d,
     normal_from_depth_image,
     normalize_coords,
     parse_tapir_track_info,
 )
 from flow3d.transforms import rt_to_mat4
+from flow3d.vis.utils import get_server
 
 
 @dataclass
@@ -27,7 +33,13 @@ class DavisDataConfig:
     start: int = 0
     end: int = -1
     res: str = "480p"
-    depth_type: Literal["depth_anything", "unidepth"] = "unidepth"
+    depth_type: Literal[
+        "aligned_depth_anything",
+        "aligned_depth_anything_v2",
+        "depth_anything",
+        "depth_anything_v2",
+        "unidepth_disp",
+    ] = "aligned_depth_anything"
     camera_type: Literal["droid_recon"] = "droid_recon"
     scene_norm_dict: SceneNormDict | None = None
     num_targets_per_frame: int = 1
@@ -42,7 +54,13 @@ class DavisDataset(BaseDataset):
         start: int = 0,
         end: int = -1,
         res: str = "480p",
-        depth_type: Literal["depth_anything", "unidepth"] = "unidepth",
+        depth_type: Literal[
+            "aligned_depth_anything",
+            "aligned_depth_anything_v2",
+            "depth_anything",
+            "depth_anything_v2",
+            "unidepth_disp",
+        ] = "aligned_depth_anything",
         camera_type: Literal["droid_recon"] = "droid_recon",
         scene_norm_dict: SceneNormDict | None = None,
         num_targets_per_frame: int = 1,
@@ -89,6 +107,7 @@ class DavisDataset(BaseDataset):
         ), f"{len(frame_names)}, {len(w2cs)}, {len(Ks)}"
         self.w2cs = w2cs[start:end]
         self.Ks = Ks[start:end]
+        self.scale = 1
 
         if scene_norm_dict is None:
             cached_scene_norm_dict_path = os.path.join(
@@ -104,7 +123,14 @@ class DavisDataset(BaseDataset):
                 scene_norm_dict = compute_scene_norm(tracks_3d, self.w2cs)
                 os.makedirs(self.cache_dir, exist_ok=True)
                 torch.save(scene_norm_dict, cached_scene_norm_dict_path)
-        self.scene_norm_dict = scene_norm_dict
+
+        # transform cameras
+        self.scene_norm_dict = cast(SceneNormDict, scene_norm_dict)
+        self.scale = self.scene_norm_dict["scale"]
+        transform = self.scene_norm_dict["transfm"]
+        guru.info(f"scene norm {self.scale=}, {transform=}")
+        self.w2cs = torch.einsum("nij,jk->nik", self.w2cs, torch.linalg.inv(transform))
+        self.w2cs[:, :3, 3] /= self.scale
 
     @property
     def num_frames(self) -> int:
@@ -119,37 +145,53 @@ class DavisDataset(BaseDataset):
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
 
-    def get_image(self, index):
+    def get_image(self, index) -> torch.Tensor:
         if self.imgs[index] is None:
             self.imgs[index] = self.load_image(index)
-        return self.imgs[index]
+        img = cast(torch.Tensor, self.imgs[index])
+        return img
 
-    def get_mask(self, index):
+    def get_mask(self, index) -> torch.Tensor:
         if self.masks[index] is None:
             self.masks[index] = self.load_mask(index)
-        return self.masks[index]
+        mask = cast(torch.Tensor, self.masks[index])
+        return mask
 
-    def get_depth(self, index):
+    def get_depth(self, index) -> torch.Tensor:
         if self.depths[index] is None:
+            print(f"loading to cache {index}")
             self.depths[index] = self.load_depth(index)
-        return self.depths[index]
+        return self.depths[index] / self.scale
 
-    def load_image(self, index):
+    def load_image(self, index) -> torch.Tensor:
         path = f"{self.img_dir}/{self.frame_names[index]}.jpg"
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
 
-    def load_mask(self, index):
+    def load_mask(self, index, r: int = 3) -> torch.Tensor:
         path = f"{self.mask_dir}/{self.frame_names[index]}.png"
         mask = imageio.imread(path)
-        mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
-        return torch.from_numpy(mask).float()
+        fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
+        bg_mask = ~fg_mask
+        fg_mask_erode = cv2.erode(
+            fg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        )
+        bg_mask_erode = cv2.erode(
+            bg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        )
+        out_mask = np.zeros_like(fg_mask, dtype=np.float32)
+        out_mask[bg_mask_erode > 0] = -1
+        out_mask[fg_mask_erode > 0] = 1
+        return torch.from_numpy(out_mask).float()
 
-    def load_depth(self, index):
+    def load_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/{self.frame_names[index]}.png"
-        depth = imageio.imread(path)
-        if depth.dtype == np.uint16:
-            depth = depth.astype(np.float32) / 256.0
-        return torch.from_numpy(depth).float()
+        disp = imageio.imread(path)
+        if disp.dtype == np.uint16:
+            disp = disp.astype(np.float32) / 65535.0
+        depth = 1.0 / np.clip(disp, a_min=1e-6, a_max=1e6)
+        depth = torch.from_numpy(depth)
+        depth = median_filter_2d(depth[None, None], 11, 1)[0, 0]
+        return depth
 
     def load_target_tracks(
         self, query_index: int, target_indices: list[int], dim: int = 1
@@ -177,6 +219,7 @@ class DavisDataset(BaseDataset):
         query_idcs = list(range(start, end, step))
         target_idcs = list(range(start, end, step))
         masks = torch.stack([self.get_mask(i) for i in target_idcs], dim=0)
+        fg_masks = (masks == 1).float()
         depths = torch.stack([self.get_depth(i) for i in target_idcs], dim=0)
         inv_Ks = torch.linalg.inv(self.Ks[target_idcs])
         c2ws = torch.linalg.inv(self.w2cs[target_idcs])
@@ -195,8 +238,9 @@ class DavisDataset(BaseDataset):
                 tracks_2d = tracks_2d[sel_idcs]
             cur_num += tracks_2d.shape[0]
             img = self.get_image(q_idx)
+            tidx = target_idcs.index(q_idx)
             tracks_tuple = get_tracks_3d_for_query_frame(
-                q_idx, img, tracks_2d, depths, masks, inv_Ks, c2ws
+                tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws
             )
             tracks_all_queries.append(tracks_tuple)
         tracks_3d, colors, visibles, invisibles, confidences = map(
@@ -226,8 +270,8 @@ class DavisDataset(BaseDataset):
         for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
             img = self.get_image(query_idx)
             depth = self.get_depth(query_idx)
-            mask = self.get_mask(query_idx)
-            bool_mask = ((1.0 - mask) * (depth > 0)).to(torch.bool)
+            bg_mask = self.get_mask(query_idx) < 0
+            bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
             w2c = self.w2cs[query_idx]
             K = self.Ks[query_idx]
             points = (
@@ -267,10 +311,14 @@ class DavisDataset(BaseDataset):
             "Ks": self.Ks[index],
             # (H, W, 3).
             "imgs": self.get_image(index),
-            # (H, W).
-            "masks": self.get_mask(index),
             "depths": self.get_depth(index),
         }
+        tri_mask = self.get_mask(index)
+        valid_mask = tri_mask != 0  # not fg or bg
+        mask = tri_mask == 1  # fg mask
+        data["masks"] = mask.float()
+        data["valid_masks"] = valid_mask.float()
+
         # (P, 2)
         query_tracks = self.load_target_tracks(index, [index])[:, 0, :2]
         target_inds = torch.from_numpy(
@@ -309,7 +357,6 @@ def load_cameras(path: str, H: int, W: int) -> tuple[torch.Tensor, torch.Tensor]
     traj_c2w = recon["traj_c2w"]  # (N, 4, 4)
     h, w = recon["img_shape"]
     sy, sx = H / h, W / w
-    print(f"{sy=}, {sx=}")
     traj_w2c = np.linalg.inv(traj_c2w)
     fx, fy, cx, cy = recon["intrinsics"]  # (4,)
     K = np.array([[fx * sx, 0, cx * sx], [0, fy * sy, cy * sy], [0, 0, 1]])  # (3, 3)

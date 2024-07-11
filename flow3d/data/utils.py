@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
+from torch.nn.modules.utils import _pair, _quadruple
 
 from typing import List, Optional, Tuple, TypedDict
 
@@ -131,6 +133,22 @@ def get_tracks_3d_for_query_frame(
     invisibles *= is_in_masks
     confidences *= is_in_masks.float()
 
+    # valid if in the fg mask at least 40% of the time
+    # in_mask_counts = is_in_masks.sum(0)
+    # t = 0.25
+    # thresh = min(t * T, in_mask_counts.float().quantile(t).item())
+    # valid = in_mask_counts > thresh
+    valid = is_in_masks[query_index]
+    # valid if visible 5% of the time
+    visible_counts = visibles.sum(0)
+    valid = valid & (
+        visible_counts
+        >= min(
+            int(0.05 * T),
+            visible_counts.float().quantile(0.1).item(),
+        )
+    )
+
     # Get track's color from the query frame.
     # (1, 3, H, W), (1, 1, N, 2) -> (1, 3, 1, N) -> (N, 3)
     track_colors = F.grid_sample(
@@ -139,12 +157,6 @@ def get_tracks_3d_for_query_frame(
         align_corners=True,
         padding_mode="border",
     )[0, :, 0].T
-    # at least visible 5% of the time, otherwise discard
-    visible_counts = visibles.sum(0)
-    valid = visible_counts >= min(
-        int(0.05 * T),
-        visible_counts.float().quantile(0.1).item(),
-    )
     return (
         tracks_3d[:, valid].swapdims(0, 1),
         track_colors[valid],
@@ -152,6 +164,42 @@ def get_tracks_3d_for_query_frame(
         invisibles[:, valid].swapdims(0, 1),
         confidences[:, valid].swapdims(0, 1),
     )
+
+
+def _get_padding(x, k, stride, padding, same: bool):
+    if same:
+        ih, iw = x.size()[2:]
+        if ih % stride[0] == 0:
+            ph = max(k[0] - stride[0], 0)
+        else:
+            ph = max(k[0] - (ih % stride[0]), 0)
+        if iw % stride[1] == 0:
+            pw = max(k[1] - stride[1], 0)
+        else:
+            pw = max(k[1] - (iw % stride[1]), 0)
+        pl = pw // 2
+        pr = pw - pl
+        pt = ph // 2
+        pb = ph - pt
+        padding = (pl, pr, pt, pb)
+    else:
+        padding = padding
+    return padding
+
+
+def median_filter_2d(x, kernel_size=3, stride=1, padding=1, same: bool = True):
+    """
+    :param x [B, C, H, W]
+    """
+    k = _pair(kernel_size)
+    stride = _pair(stride)  # convert to tuple
+    padding = _quadruple(padding)  # convert to l, r, t, b
+    # using existing pytorch functions and tensor ops so that we get autograd,
+    # would likely be more efficient to implement from scratch at C/Cuda level
+    x = F.pad(x, _get_padding(x, k, stride, padding, same), mode="reflect")
+    x = x.unfold(2, k[0], stride[0]).unfold(3, k[1], stride[1])
+    x = x.contiguous().view(x.size()[:4] + (-1,)).median(dim=-1)[0]
+    return x
 
 
 def masked_median_blur(image, mask, kernel_size=11):

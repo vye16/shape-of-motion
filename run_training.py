@@ -1,17 +1,17 @@
 from dataclasses import asdict, dataclass
-from typing import Annotated, Union
-from tqdm import tqdm
-import yaml
-
-import tyro
+from datetime import datetime
 import os
 import os.path as osp
 import numpy as np
 from loguru import logger as guru
+import shutil
 import torch
 from torch.utils.data import DataLoader
-from datetime import datetime
-import shutil
+from typing import Annotated, Union
+from tqdm import tqdm
+import tyro
+import yaml
+
 from flow3d.configs import (
     SceneLRConfig,
     LossesConfig,
@@ -77,7 +77,7 @@ class TrainConfig:
 def main(cfg: TrainConfig):
     backup_code(cfg.work_dir)
     train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
-        get_train_val_datasets(cfg.data)
+        get_train_val_datasets(cfg.data, load_val=True)
     )
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
 
