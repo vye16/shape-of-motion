@@ -356,8 +356,14 @@ class iPhoneDataset(BaseDataset):
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
 
-    # def get_sam_features(self) -> list[torch.Tensor, tuple[int, int], tuple[int, int]]:
-    #     return self.sam_features, self.sam_original_size, self.sam_input_size
+    def get_image(self, index: int) -> torch.Tensor:
+        return self.imgs[index]
+
+    def get_depth(self, index: int) -> torch.Tensor:
+        return self.depths[index]
+
+    def get_masks(self, index: int) -> torch.Tensor:
+        return self.masks[index]
 
     def get_tracks_3d(
         self,

@@ -227,6 +227,7 @@ class DavisDataset(BaseDataset):
         num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
         cur_num = 0
         tracks_all_queries = []
+        # server = get_server()
         for q_idx in query_idcs:
             # (N, T, 4)
             tracks_2d = self.load_target_tracks(q_idx, target_idcs)
@@ -242,6 +243,13 @@ class DavisDataset(BaseDataset):
             tracks_tuple = get_tracks_3d_for_query_frame(
                 tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws
             )
+            # try:
+            #     points, clrs = tracks_tuple[0].cpu().numpy(), tracks_tuple[1].cpu().numpy()
+            #     for t in range(len(target_idcs)):
+            #         server.scene.add_point_cloud("points", points[:, t], clrs, point_size=0.1)
+            #         time.sleep(0.3)
+            # except KeyboardInterrupt:
+            #     import ipdb; ipdb.set_trace()
             tracks_all_queries.append(tracks_tuple)
         tracks_3d, colors, visibles, invisibles, confidences = map(
             partial(torch.cat, dim=0), zip(*tracks_all_queries)

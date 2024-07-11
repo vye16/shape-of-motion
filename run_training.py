@@ -68,6 +68,7 @@ class TrainConfig:
     num_motion_bases: int = 10
     num_epochs: int = 500
     port: int = 8890
+    vis_debug: bool = True
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 50
@@ -90,7 +91,9 @@ def main(cfg: TrainConfig):
 
     # if checkpoint exists
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
-    initialize_and_checkpoint_model(cfg, train_dataset, device, ckpt_path)
+    initialize_and_checkpoint_model(
+        cfg, train_dataset, device, ckpt_path, port=cfg.port,
+    )
 
     trainer, start_epoch = Trainer.init_from_checkpoint(
         ckpt_path,
@@ -155,19 +158,20 @@ def initialize_and_checkpoint_model(
     train_dataset: BaseDataset,
     device: torch.device,
     ckpt_path: str,
+    port: int,
 ):
     if os.path.exists(ckpt_path):
         guru.info(f"model checkpoint exists at {ckpt_path}")
         return
 
     fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
-        train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases
+        train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases, port, 
     )
     # run initial optimization
     Ks = train_dataset.get_Ks().to(device)
     w2cs = train_dataset.get_w2cs().to(device)
     run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
-    server = get_server(port=8890)
+    server = get_server(port=port)
     vis_init_params(server, fg_params, motion_bases)
     model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
 
@@ -177,7 +181,11 @@ def initialize_and_checkpoint_model(
 
 
 def init_model_from_tracks(
-    train_dataset, num_fg: int, num_bg: int, num_motion_bases: int
+    train_dataset,
+    num_fg: int,
+    num_bg: int,
+    num_motion_bases: int,
+    port: int,
 ):
     tracks_3d = TrackObservations(*train_dataset.get_tracks_3d(num_fg))
     print(
@@ -196,7 +204,7 @@ def init_model_from_tracks(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-        tracks_3d, num_motion_bases, rot_type, cano_t
+        tracks_3d, num_motion_bases, rot_type, cano_t, port=port
     )
     motion_bases = motion_bases.to(device)
 

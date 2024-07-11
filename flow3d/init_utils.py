@@ -1,3 +1,4 @@
+import time
 import cupy as cp
 from cuml import HDBSCAN, KMeans
 import imageio.v3 as iio
@@ -117,6 +118,7 @@ def init_motion_params_with_procrustes(
     cluster_init_method: str = "kmeans",
     min_mean_weight: float = 0.1,
     vis: bool = False,
+    port: int = 8890,
 ) -> tuple[MotionBases, torch.Tensor, TrackObservations]:
     device = tracks_3d.xyz.device
     num_frames = tracks_3d.xyz.shape[1]
@@ -135,6 +137,19 @@ def init_motion_params_with_procrustes(
     print(f"{valid_mask.sum()=}")
 
     tracks_3d = tracks_3d.filter_valid(valid_mask)
+
+    if vis:
+        server = get_server(port)
+        try:
+            pts = tracks_3d.xyz.cpu().numpy()
+            clrs = tracks_3d.colors.cpu().numpy()
+            while True:
+                for t in range(num_frames):
+                    server.scene.add_point_cloud("points", pts[:, t], clrs)
+                    time.sleep(0.3)
+        except KeyboardInterrupt:
+            pass
+
     means_cano = means_cano[valid_mask]
 
     sampled_centers, num_bases, labels = sample_initial_bases_centers(
@@ -234,7 +249,7 @@ def init_motion_params_with_procrustes(
     guru.info(f"{init_rots.shape=}, {init_ts.shape=}, {motion_coefs.shape=}")
 
     if vis:
-        server = get_server(port=8890)
+        server = get_server(port)
         center_idcs = torch.argmin(dists2centers, dim=0)
         print(f"{dists2centers.shape=} {center_idcs.shape=}")
         vis_se3_init_3d(server, init_rots, init_ts, means_cano[center_idcs])
@@ -410,7 +425,7 @@ def vis_init_params(
     fg: GaussianParams,
     bases: MotionBases,
     name="init_params",
-    num_vis: int = 50,
+    num_vis: int = 100,
 ):
     idcs = np.random.choice(fg.num_gaussians, num_vis)
     labels = np.linspace(0, 1, num_vis)
