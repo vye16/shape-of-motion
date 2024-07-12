@@ -1,5 +1,3 @@
-import os
-
 import argparse
 import functools
 import glob
@@ -15,7 +13,6 @@ import tree
 from tapnet.models import tapir_model
 from tapnet.utils import transforms
 from tqdm import tqdm
-
 
 base_dir = os.path.abspath(f"{__file__}/../..")
 ckpt_path = f"{base_dir}/checkpoints/tapir_checkpoint_panning.npy"

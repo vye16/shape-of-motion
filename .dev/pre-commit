@@ -1,4 +1,4 @@
 #!/bin/sh
 
-black scripts flow3d preproc --exclude "preproc/tapnet|preproc/DROID-SLAM"
-isort --profile black scripts flow3d preproc --skip preproc/tapnet --skip preproc/DROID-SLAM
+black scripts flow3d preproc --exclude "preproc/tapnet|preproc/DROID-SLAM|preproc/UniDepth"
+isort --profile black scripts flow3d preproc --skip preproc/tapnet --skip preproc/DROID-SLAM --skip preproc/UniDepth
