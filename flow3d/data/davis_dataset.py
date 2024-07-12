@@ -164,7 +164,6 @@ class DavisDataset(BaseDataset):
 
     def get_depth(self, index) -> torch.Tensor:
         if self.depths[index] is None:
-            print(f"loading to cache {index}")
             self.depths[index] = self.load_depth(index)
         return self.depths[index] / self.scale
 
