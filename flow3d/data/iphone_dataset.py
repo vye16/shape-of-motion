@@ -322,7 +322,7 @@ class iPhoneDataset(BaseDataset):
                 original_up = -F.normalize(self.w2cs[:, 1, :3].mean(0), dim=-1)
                 target_up = original_up.new_tensor([0.0, 0.0, 1.0])
                 R = roma.rotvec_to_rotmat(
-                    F.normalize(original_up.cross(target_up), dim=-1)
+                    F.normalize(original_up.cross(target_up, dim=-1), dim=-1)
                     * original_up.dot(target_up).acos_()
                 )
                 transfm = rt_to_mat4(R, torch.einsum("ij,j->i", -R, scene_center))
