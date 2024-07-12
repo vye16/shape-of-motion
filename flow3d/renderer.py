@@ -61,7 +61,11 @@ class Renderer:
         )
         t = 0
         if self.viewer is not None:
-            t = int(self.viewer._playback_guis[0].value)
+            t = (
+                int(self.viewer._playback_guis[0].value)
+                if not self.viewer._canonical_checkbox.value
+                else None
+            )
         self.model.training = False
         img = self.model.render(t, w2c[None], K[None], img_wh)["img"][0]
         return (img.cpu().numpy() * 255.0).astype(np.uint8)

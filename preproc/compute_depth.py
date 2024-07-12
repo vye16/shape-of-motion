@@ -10,9 +10,8 @@ import imageio.v2 as iio
 import numpy as np
 import torch
 from PIL import Image
-from transformers import pipeline, Pipeline
 from tqdm import tqdm
-
+from transformers import Pipeline, pipeline
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

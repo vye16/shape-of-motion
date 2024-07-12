@@ -1,7 +1,8 @@
 import os
-import tyro
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
+
+import tyro
 
 
 def main(img_dirs: list[str], depth_root: str, intrins_root: str, devices: list[int]):

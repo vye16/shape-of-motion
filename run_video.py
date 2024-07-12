@@ -1,9 +1,9 @@
 import os
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Annotated, Callable, cast
+from typing import Annotated, Callable
 
-import imageio as iio
+import imageio.v3 as iio
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -239,7 +239,7 @@ def main(cfg: VideoConfig):
 
     video_dir = f"{cfg.work_dir}/videos/{datetime.now().strftime('%Y-%m-%d-%H%M%S')}"
     os.makedirs(video_dir, exist_ok=True)
-    iio.mimwrite(f"{video_dir}/video.mp4", make_video_divisble(video), fps=cfg.fps)
+    iio.imwrite(f"{video_dir}/video.mp4", make_video_divisble(video), fps=cfg.fps)
     with open(f"{video_dir}/cfg.yaml", "w") as f:
         yaml.dump(asdict(cfg), f, default_flow_style=False)
 

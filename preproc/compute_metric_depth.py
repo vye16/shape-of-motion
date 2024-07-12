@@ -1,11 +1,11 @@
-import os
 import json
-import tyro
-import torch
-from tqdm import tqdm
-import numpy as np
-import imageio.v3 as iio
+import os
 
+import imageio.v3 as iio
+import numpy as np
+import torch
+import tyro
+from tqdm import tqdm
 from unidepth.models import UniDepthV1
 
 

@@ -1,15 +1,14 @@
-import os
 import colorsys
+import os
 from typing import Tuple
-import cv2
-import tyro
-import torch
 
-from loguru import logger as guru
+import cv2
+import gradio as gr
 import imageio.v2 as iio
 import numpy as np
-import gradio as gr
-
+import torch
+import tyro
+from loguru import logger as guru
 from mask_utils import init_sam_model, init_tracker, track_masks
 
 

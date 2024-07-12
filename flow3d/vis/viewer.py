@@ -40,6 +40,25 @@ class DynamicViewer(Viewer):
                 initial_fps=15.0,
             )
             self._playback_guis[0].on_update(self.rerender)
+            self._canonical_checkbox = server.gui.add_checkbox("Canonical", False)
+            self._canonical_checkbox.on_update(self.rerender)
+
+            _cached_playback_disabled = []
+
+            def _toggle_gui_playing(event):
+                if event.target.value:
+                    nonlocal _cached_playback_disabled
+                    _cached_playback_disabled = [
+                        gui.disabled for gui in self._playback_guis
+                    ]
+                    target_disabled = [True] * len(self._playback_guis)
+                else:
+                    target_disabled = _cached_playback_disabled
+                for gui, disabled in zip(self._playback_guis, target_disabled):
+                    gui.disabled = disabled
+
+            self._canonical_checkbox.on_update(_toggle_gui_playing)
+
         tabs = server.gui.add_tab_group()
         with tabs.add_tab("Render", Icon.CAMERA):
             self.render_tab_state = populate_render_tab(
