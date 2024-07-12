@@ -1,7 +1,8 @@
 import os
-import tyro
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
+
+import tyro
 
 
 def main(
@@ -38,6 +39,7 @@ def main(
                 f"--model {depth_model}"
             )
             exe.submit(subprocess.call, cmd, shell=True)
+
 
 if __name__ == "__main__":
     tyro.cli(main)
