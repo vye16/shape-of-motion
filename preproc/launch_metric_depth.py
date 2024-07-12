@@ -19,7 +19,7 @@ def main(img_dirs: list[str], depth_root: str, intrins_root: str, devices: list[
             os.makedirs(depth_dir, exist_ok=True)
             intrins_file = f"{intrins_root}/{seq_name}.json"
             cmd = (
-                f"CUDA_VISIBLE_DEVICES={dev_id} python run.py "
+                f"CUDA_VISIBLE_DEVICES={dev_id} python compute_metric_depth.py "
                 f"--img-dir {img_dir} --depth-dir {depth_dir} --intrins-file {intrins_file}"
             )
             exe.submit(subprocess.call, cmd, shell=True)
