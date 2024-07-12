@@ -65,37 +65,46 @@ class SceneModel(nn.Module):
         transfms = self.motion_bases.compute_transforms(ts, coefs)  # (G, B, 3, 4)
         return transfms
 
-    def compute_poses_fg(self, ts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def compute_poses_fg(
+        self, ts: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         :returns means: (G, B, 3), quats: (G, B, 4)
         """
-        transfms = self.compute_transforms(ts)  # (G, B, 3, 4)
         means = self.fg.params["means"]  # (G, 3)
-        means = torch.einsum(
-            "pnij,pj->pni",
-            transfms,
-            F.pad(means, (0, 1), value=1.0),
-        )
-        quats = roma.quat_xyzw_to_wxyz(
-            (
-                roma.quat_product(
-                    roma.rotmat_to_unitquat(transfms[..., :3, :3]),
-                    roma.quat_wxyz_to_xyzw(self.fg.get_quats()[:, None]),
+        quats = self.fg.get_quats()  # (G, 4)
+        if ts is not None:
+            transfms = self.compute_transforms(ts)  # (G, B, 3, 4)
+            means = torch.einsum(
+                "pnij,pj->pni",
+                transfms,
+                F.pad(means, (0, 1), value=1.0),
+            )
+            quats = roma.quat_xyzw_to_wxyz(
+                (
+                    roma.quat_product(
+                        roma.rotmat_to_unitquat(transfms[..., :3, :3]),
+                        roma.quat_wxyz_to_xyzw(quats[:, None]),
+                    )
                 )
             )
-        )
-        quats = F.normalize(quats, p=2, dim=-1)
+            quats = F.normalize(quats, p=2, dim=-1)
+        else:
+            means = means[:, None]
+            quats = quats[:, None]
         return means, quats
 
-    def compute_poses_all(self, ts) -> tuple[torch.Tensor, torch.Tensor]:
+    def compute_poses_all(
+        self, ts: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         means, quats = self.compute_poses_fg(ts)
         if self.has_bg:
             bg_means, bg_quats = self.compute_poses_bg()
             means = torch.cat(
-                [means, bg_means[:, None].expand(-1, len(ts), -1)], dim=0
+                [means, bg_means[:, None].expand(-1, means.shape[1], -1)], dim=0
             ).contiguous()
             quats = torch.cat(
-                [quats, bg_quats[:, None].expand(-1, len(ts), -1)], dim=0
+                [quats, bg_quats[:, None].expand(-1, means.shape[1], -1)], dim=0
             ).contiguous()
         return means, quats
 
@@ -142,7 +151,7 @@ class SceneModel(nn.Module):
     def render(
         self,
         # A single time instance for view rendering.
-        t: int,
+        t: int | None,
         w2cs: torch.Tensor,  # (C, 4, 4)
         Ks: torch.Tensor,  # (C, 3, 3)
         img_wh: tuple[int, int],
@@ -164,7 +173,9 @@ class SceneModel(nn.Module):
         W, H = img_wh
 
         if means is None or quats is None:
-            means, quats = self.compute_poses_all(torch.tensor([t], device=device))
+            means, quats = self.compute_poses_all(
+                torch.tensor([t], device=device) if t is not None else None
+            )
             means = means[:, 0]
             quats = quats[:, 0]
 
