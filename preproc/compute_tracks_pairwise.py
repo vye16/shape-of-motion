@@ -1,32 +1,41 @@
 import os
 
-basedir = os.path.dirname(os.path.abspath(__file__))
-tap_dir = os.path.join(basedir, "tapnet")
-
-import sys
-
-sys.path.extend([tap_dir, basedir])
 import argparse
 import functools
 import glob
 import os
-import subprocess
 
 import haiku as hk
 import imageio
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import mediapy as media
 import numpy as np
 import tree
-from tapir_model import QueryFeatures
-from tapnet import tapir_model
-from tapnet.utils import transforms, viz_utils
+from tapnet.models import tapir_model
+from tapnet.utils import transforms
 from tqdm import tqdm
 
-# from google.colab import output
-# output.enable_custom_widget_manager()
+
+base_dir = os.path.abspath(f"{__file__}/../..")
+ckpt_path = f"{base_dir}/checkpoints/tapir_checkpoint_panning.npy"
+print(f"{base_dir=} {ckpt_path=}")
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--image_dir", type=str, required=True, help="image dir")
+parser.add_argument("--mask_dir", type=str, required=True, help="mask dir")
+parser.add_argument("--out_dir", type=str, required=True, help="out dir")
+parser.add_argument("--grid_size", type=int, default=4, help="grid size")
+parser.add_argument("--resize_height", type=int, default=256, help="resize height")
+parser.add_argument("--resize_width", type=int, default=256, help="resize width")
+parser.add_argument("--num_points", type=int, default=200, help="num points")
+parser.add_argument(
+    "--checkpoint",
+    type=str,
+    default=ckpt_path,
+    help="checkpoint",
+)
+args = parser.parse_args()
 
 
 def gen_grid_np(h, w, normalize=False, homogeneous=False):
@@ -43,8 +52,7 @@ def gen_grid_np(h, w, normalize=False, homogeneous=False):
     return grid  # [h, w, 2 or 3]
 
 
-checkpoint_path = "checkpoints/tapir_checkpoint_panning.npy"
-ckpt_state = np.load(checkpoint_path, allow_pickle=True).item()
+ckpt_state = np.load(args.checkpoint, allow_pickle=True).item()
 params, state = ckpt_state["params"], ckpt_state["state"]
 
 
@@ -184,18 +192,6 @@ def read_video(folder_path):
     video = media._VideoArray(video)
     return video
 
-
-# seq_name = 'lab-coat'
-# data_dir = '/home/qw246/data/davis_tapir/{}'.format(seq_name)
-parser = argparse.ArgumentParser()
-parser.add_argument("--image_dir", type=str, required=True, help="image dir")
-parser.add_argument("--mask_dir", type=str, required=True, help="mask dir")
-parser.add_argument("--out_dir", type=str, required=True, help="out dir")
-parser.add_argument("--grid_size", type=int, default=8, help="grid size")
-parser.add_argument("--resize_height", type=int, default=256, help="resize height")
-parser.add_argument("--resize_width", type=int, default=256, help="resize width")
-parser.add_argument("--num_points", type=int, default=200, help="num points")
-args = parser.parse_args()
 
 resize_height = args.resize_height
 resize_width = args.resize_width

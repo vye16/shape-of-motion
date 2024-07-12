@@ -50,7 +50,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--devices", nargs="+", default=[0])
     parser.add_argument("--root_dir", type=str, help="path to davis directory")
-    parser.add_argument("--depth_method", type=str, default="unidepth")
+    parser.add_argument("--depth_method", type=str, default="unidepth_disp")
     parser.add_argument("--intrins_method", type=str, default="unidepth_intrins")
     parser.add_argument("--out_name", type=str, default="droid_recon")
     parser.add_argument("--seq_names", nargs="+", default=None)
