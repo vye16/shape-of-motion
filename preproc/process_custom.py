@@ -1,6 +1,7 @@
-import tyro
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
+
+import tyro
 
 
 def main(
