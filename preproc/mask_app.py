@@ -136,6 +136,7 @@ class PromptGUI(object):
         self.lazy_init_tracker()
         assert self.tracker is not None
         images = [iio.imread(p) for p in self.img_paths]
+        # binary masks
         self.masks_all = track_masks(
             self.tracker, images, self.cur_mask, self.frame_index
         )
