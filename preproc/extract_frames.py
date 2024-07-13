@@ -1,6 +1,7 @@
-import tyro
 import os
 import subprocess
+
+import tyro
 
 
 def extract_frames(video_path: str, output_root: str, height: int, ext: str):

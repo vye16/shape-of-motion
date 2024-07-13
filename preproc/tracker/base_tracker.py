@@ -11,7 +11,6 @@ import yaml
 from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
-
 from tracker.inference.inference_core import InferenceCore
 from tracker.model.network import XMem
 from tracker.util.mask_mapper import MaskMapper

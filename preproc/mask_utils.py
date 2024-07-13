@@ -1,7 +1,7 @@
 import glob
-from loguru import logger as guru
 
 import numpy as np
+from loguru import logger as guru
 from segment_anything import SamPredictor, sam_model_registry
 from tracker.base_tracker import BaseTracker
 

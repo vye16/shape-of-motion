@@ -47,7 +47,7 @@ class PromptGUI(object):
         if self.tracker is None:
             self.tracker = init_tracker(self.checkpoint_dir, self.device)
 
-    def clear_points(self) ->tuple[None, None, str]:
+    def clear_points(self) -> tuple[None, None, str]:
         self.selected_points.clear()
         self.selected_labels.clear()
         message = "Cleared points, select new points to update mask"

@@ -13,7 +13,6 @@ The trailing number of a variable usually denote the stride
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from tracker.model import resnet
 from tracker.model.cbam import CBAM
 from tracker.model.group_modules import *

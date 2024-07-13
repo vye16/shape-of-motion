@@ -8,7 +8,6 @@ It further depends on modules.py which gives more detailed implementations of su
 
 import torch
 import torch.nn as nn
-
 from tracker.model.aggregate import aggregate
 from tracker.model.memory_util import *
 from tracker.model.modules import *

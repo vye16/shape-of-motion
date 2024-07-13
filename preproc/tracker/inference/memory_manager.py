@@ -1,7 +1,6 @@
 import warnings
 
 import torch
-
 from tracker.inference.kv_memory_store import KeyValueMemoryStore
 from tracker.model.memory_util import *
 

@@ -14,7 +14,6 @@ from tapnet.models import tapir_model
 from tapnet.utils import transforms
 from tqdm import tqdm
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--image_dir", type=str, required=True, help="image dir")
 parser.add_argument("--mask_dir", type=str, required=True, help="mask dir")
