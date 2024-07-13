@@ -46,6 +46,9 @@ def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
     img_files = sorted(os.listdir(img_dir))
     if not intrins_file.endswith(".json"):
         intrins_file = f"{intrins_file}.json"
+
+    os.makedirs(depth_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(intrins_file), exist_ok=True)
     if len(os.listdir(depth_dir)) == len(img_files) and os.path.isfile(intrins_file):
         print(
             f"found {len(img_files)} files in {depth_dir}, found {intrins_file}, skipping"

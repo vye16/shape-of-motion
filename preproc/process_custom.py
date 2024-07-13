@@ -48,43 +48,45 @@ def process_sequence(
 ):
     dev_arg = f"CUDA_VISIBLE_DEVICES={dev_id}"
     # XXX activate environments
-    metric_env_cmd = "conda activate unidepth"
-    droid_env_cmd = "conda activate raft3d"
-    track_env_cmd = "conda activate tapnet"
-    our_env_cmd = "conda activate 4dgs"
+    source_pre = "source /home/vye/anaconda3/bin/activate"
+    # source_pre = "conda activate"
+    metric_env = "unidepth"
+    droid_env = "raft3d"
+    track_env = "tapnet"
+    our_env = "4dgs"
 
     metric_depth_cmd = (
         f"{dev_arg} python compute_metric_depth.py --img-dir {img_dir} "
         f"--depth-dir {metric_depth_dir} --intrins-file {intrins_path}"
     )
-    cmd = f"{metric_env_cmd}; {metric_depth_cmd}"
+    cmd = f"{source_pre} {metric_env}; {metric_depth_cmd}"
     print(cmd)
-    subprocess.call(cmd, shell=True)
+    subprocess.call(cmd, shell=True, executable="/bin/bash")
 
     slam_cmd = (
         f"{dev_arg} python recon_with_depth.py --image_dir {img_dir} "
         f"--calib {intrins_path} --depth_dir {aligned_depth_dir} --out_path {slam_path}"
     )
-    cmd = f"{droid_env_cmd}; {slam_cmd}"
+    cmd = f"{source_pre} {droid_env}; {slam_cmd}"
     print(cmd)
-    subprocess.call(cmd, shell=True)
+    subprocess.call(cmd, shell=True, executable="/bin/bash")
 
     mono_depth_cmd = (
         f"{dev_arg} python compute_depth.py --img_dir {img_dir} "
         f"--out_raw_dir {mono_depth_dir} --out_aligned_dir {aligned_depth_dir} "
         f"--model {depth_model} --metric_dir {metric_depth_dir}"
     )
-    cmd = f"{our_env_cmd}; {mono_depth_cmd}"
+    cmd = f"{source_pre} {our_env}; {mono_depth_cmd}"
     print(cmd)
-    subprocess.call(cmd, shell=True)
+    subprocess.call(cmd, shell=True, executable="/bin/bash")
 
     track_cmd = (
         f"{dev_arg} python compute_tracks_pairwise.py --image_dir {img_dir} "
         f"--mask_dir {mask_dir} --out_dir {track_dir}"
     )
-    cmd = f"{track_env_cmd}; {track_cmd}"
+    cmd = f"{source_pre} {track_env}; {track_cmd}"
     print(cmd)
-    subprocess.call(cmd, shell=True)
+    subprocess.call(cmd, shell=True, executable="/bin/bash")
 
 
 if __name__ == "__main__":
