@@ -12,10 +12,10 @@ from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
 
-from flow3d.tracker.inference.inference_core import InferenceCore
-from flow3d.tracker.model.network import XMem
-from flow3d.tracker.util.mask_mapper import MaskMapper
-from flow3d.tracker.util.range_transform import im_normalization
+from tracker.inference.inference_core import InferenceCore
+from tracker.model.network import XMem
+from tracker.util.mask_mapper import MaskMapper
+from tracker.util.range_transform import im_normalization
 
 
 class BaseTracker(object):

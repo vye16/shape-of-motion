@@ -9,9 +9,9 @@ It further depends on modules.py which gives more detailed implementations of su
 import torch
 import torch.nn as nn
 
-from flow3d.tracker.model.aggregate import aggregate
-from flow3d.tracker.model.memory_util import *
-from flow3d.tracker.model.modules import *
+from tracker.model.aggregate import aggregate
+from tracker.model.memory_util import *
+from tracker.model.modules import *
 
 
 class XMem(nn.Module):

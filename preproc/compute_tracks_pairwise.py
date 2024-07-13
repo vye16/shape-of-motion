@@ -14,9 +14,6 @@ from tapnet.models import tapir_model
 from tapnet.utils import transforms
 from tqdm import tqdm
 
-base_dir = os.path.abspath(f"{__file__}/../..")
-ckpt_path = f"{base_dir}/checkpoints/tapir_checkpoint_panning.npy"
-print(f"{base_dir=} {ckpt_path=}")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--image_dir", type=str, required=True, help="image dir")
@@ -29,7 +26,7 @@ parser.add_argument("--num_points", type=int, default=200, help="num points")
 parser.add_argument(
     "--checkpoint",
     type=str,
-    default=ckpt_path,
+    default="checkpoints/tapir_checkpoint_panning.npy",
     help="checkpoint",
 )
 args = parser.parse_args()

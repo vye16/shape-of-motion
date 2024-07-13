@@ -14,9 +14,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from flow3d.tracker.model import resnet
-from flow3d.tracker.model.cbam import CBAM
-from flow3d.tracker.model.group_modules import *
+from tracker.model import resnet
+from tracker.model.cbam import CBAM
+from tracker.model.group_modules import *
 
 
 class FeatureFusionBlock(nn.Module):

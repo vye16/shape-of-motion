@@ -2,8 +2,8 @@ import warnings
 
 import torch
 
-from flow3d.tracker.inference.kv_memory_store import KeyValueMemoryStore
-from flow3d.tracker.model.memory_util import *
+from tracker.inference.kv_memory_store import KeyValueMemoryStore
+from tracker.model.memory_util import *
 
 
 class MemoryManager:

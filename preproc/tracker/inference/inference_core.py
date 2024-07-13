@@ -1,7 +1,7 @@
-from flow3d.tracker.inference.memory_manager import MemoryManager
-from flow3d.tracker.model.aggregate import aggregate
-from flow3d.tracker.model.network import XMem
-from flow3d.tracker.util.tensor_util import pad_divide_by, unpad
+from tracker.inference.memory_manager import MemoryManager
+from tracker.model.aggregate import aggregate
+from tracker.model.network import XMem
+from tracker.util.tensor_util import pad_divide_by, unpad
 
 
 class InferenceCore:
