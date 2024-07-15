@@ -12,12 +12,12 @@ import glob
 import json
 import time
 
-import torch
-import torch.nn.functional as F
 import cv2
 import droid_backends
 import imageio.v2 as iio
 import numpy as np
+import torch
+import torch.nn.functional as F
 from droid import Droid
 from lietorch import SE3
 from torch.multiprocessing import Process
