@@ -64,7 +64,7 @@ class TrainConfig:
     num_bg: int = 100_000
     num_motion_bases: int = 10
     num_epochs: int = 500
-    port: int = 8890
+    port: int | None = None
     vis_debug: bool = True
     batch_size: int = 8
     num_dl_workers: int = 4

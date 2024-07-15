@@ -43,7 +43,7 @@ class DavisDataConfig:
     ] = "aligned_depth_anything"
     camera_type: Literal["droid_recon"] = "droid_recon"
     scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
-    num_targets_per_frame: int = 1
+    num_targets_per_frame: int = 4
     load_from_cache: bool = False
 
 
@@ -64,7 +64,7 @@ class DavisDataset(BaseDataset):
         ] = "aligned_depth_anything",
         camera_type: Literal["droid_recon"] = "droid_recon",
         scene_norm_dict: SceneNormDict | None = None,
-        num_targets_per_frame: int = 1,
+        num_targets_per_frame: int = 4,
         load_from_cache: bool = False,
         **_,
     ):
