@@ -39,7 +39,7 @@ def process_sequence(
     img_dir: str,
     mask_dir: str,
     metric_depth_dir: str,
-    intrins_path: str,
+    intrins_name: str,
     mono_depth_dir: str,
     aligned_depth_dir: str,
     slam_path: str,
@@ -51,13 +51,13 @@ def process_sequence(
     source_pre = "source /home/vye/anaconda3/bin/activate"
     # source_pre = "conda activate"
     metric_env = "unidepth"
-    droid_env = "raft3d"
+    droid_env = "4dgs"
     track_env = "tapnet"
     our_env = "4dgs"
 
     metric_depth_cmd = (
         f"{dev_arg} python compute_metric_depth.py --img-dir {img_dir} "
-        f"--depth-dir {metric_depth_dir} --intrins-file {intrins_path}"
+        f"--depth-dir {metric_depth_dir} --intrins-file {intrins_name}.json"
     )
     cmd = f"{source_pre} {metric_env}; {metric_depth_cmd}"
     print(cmd)
@@ -65,7 +65,7 @@ def process_sequence(
 
     slam_cmd = (
         f"{dev_arg} python recon_with_depth.py --image_dir {img_dir} "
-        f"--calib {intrins_path} --depth_dir {aligned_depth_dir} --out_path {slam_path}"
+        f"--calib {intrins_name}.json --depth_dir {aligned_depth_dir} --out_path {slam_path}"
     )
     cmd = f"{source_pre} {droid_env}; {slam_cmd}"
     print(cmd)

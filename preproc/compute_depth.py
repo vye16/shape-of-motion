@@ -98,6 +98,10 @@ def align_monodepth_with_metric_depth(
     mono_paths = sorted(glob(f"{input_monodepth_dir}/{matching_pattern}"))
     img_files = [osp.basename(p) for p in mono_paths]
     os.makedirs(output_monodepth_dir, exist_ok=True)
+    if len(os.listdir(output_monodepth_dir)) == len(img_files):
+        print(f"Founds {len(img_files)} files in {output_monodepth_dir}, skipping")
+        return
+
     for f in tqdm(img_files):
         metric_path = osp.join(metric_depth_dir, f)
         mono_path = osp.join(input_monodepth_dir, f)

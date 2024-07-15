@@ -196,16 +196,30 @@ mask_dir = args.mask_dir
 frame_names = [
     os.path.basename(f) for f in sorted(glob.glob(os.path.join(folder_path, "*")))
 ]
+# data_dir = args.data_dir
+# out_dir = os.path.join(data_dir, "2d_tracks")
+out_dir = args.out_dir
+os.makedirs(out_dir, exist_ok=True)
+
+done = True
+for t in range(len(frame_names)):
+    for j in range(len(frame_names)):
+        name_t = os.path.splitext(frame_names[t])[0]
+        name_j = os.path.splitext(frame_names[j])[0]
+        out_path = f"{out_dir}/{name_t}_{name_j}.npy"
+        if not os.path.exists(out_path):
+            done = False
+            break
+print(f"{done=}")
+if done:
+    print("Already done")
+    exit()
+
 video = read_video(folder_path)
 num_frames, height, width = video.shape[0:3]
 masks = read_video(mask_dir)
 masks = (masks.reshape((num_frames, height, width, -1)) > 0).any(axis=-1)
 print(f"{video.shape=} {masks.shape=} {masks.max()=} {masks.sum()=}")
-
-# data_dir = args.data_dir
-# out_dir = os.path.join(data_dir, "2d_tracks")
-out_dir = args.out_dir
-os.makedirs(out_dir, exist_ok=True)
 
 frames = media.resize_video(video, (resize_height, resize_width))
 print(f"{frames.shape=}")

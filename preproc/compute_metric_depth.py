@@ -40,9 +40,6 @@ def write_depth(path, depth, rescale: bool, bits: int = 2):
 
 
 def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
-    model = UniDepthV1.from_pretrained("lpiccinelli/unidepth-v1-vitl14")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
     img_files = sorted(os.listdir(img_dir))
     if not intrins_file.endswith(".json"):
         intrins_file = f"{intrins_file}.json"
@@ -55,6 +52,9 @@ def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
         )
         return
 
+    model = UniDepthV1.from_pretrained("lpiccinelli/unidepth-v1-vitl14")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
     print("Torch version:", torch.__version__)
     print(f"Running on {img_dir} with {len(img_files)} images")
     model = model.to(device)

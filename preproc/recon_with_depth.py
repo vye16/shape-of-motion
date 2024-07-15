@@ -12,12 +12,12 @@ import glob
 import json
 import time
 
+import torch
+import torch.nn.functional as F
 import cv2
 import droid_backends
 import imageio.v2 as iio
 import numpy as np
-import torch
-import torch.nn.functional as F
 from droid import Droid
 from lietorch import SE3
 from torch.multiprocessing import Process
@@ -261,7 +261,7 @@ if __name__ == "__main__":
             args.image_size = [image.shape[2], image.shape[3]]
             droid = Droid(args)
 
-        print(f"{t=} {image.shape=} {depth.shape if depth is not None else None}")
+        # print(f"{t=} {image.shape=} {depth.shape if depth is not None else None}")
         droid.track(t, image, depth=depth, intrinsics=intrinsics)
 
     traj_est = droid.terminate(image_stream(args.image_dir, args.calib, args.stride))
