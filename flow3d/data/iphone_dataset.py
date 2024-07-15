@@ -42,7 +42,7 @@ class iPhoneDataConfig:
     ] = "depth_anything_colmap"
     camera_type: Literal["original", "refined"] = "refined"
     use_median_filter: bool = False
-    num_targets_per_frame: int = 1
+    num_targets_per_frame: int = 4
     scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     load_from_cache: bool = False
     skip_load_imgs: bool = False
