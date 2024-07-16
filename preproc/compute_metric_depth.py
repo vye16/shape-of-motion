@@ -9,31 +9,34 @@ from tqdm import tqdm
 from unidepth.models import UniDepthV1
 
 
-def write_depth(path, depth, rescale: bool, bits: int = 2):
+def write_disp(path, disp, rescale: bool, bits: int = 2):
     """
-    Write depth map to png file.
+    Write disparity to png file.
     :param path (str): filepath without extension
     :param depth (array): depth
     """
     assert bits in [1, 2], "Unsupported bit depth."
 
-    if not np.isfinite(depth).all():
-        depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+    if not np.isfinite(disp).all():
+        disp = np.nan_to_num(disp, nan=0.0, posinf=0.0, neginf=0.0)
         print("WARNING: Non-finite depth values present")
 
     max_val = (2 ** (8 * bits)) - 1
     dtype = "uint8" if bits == 1 else "uint16"
 
     if rescale:
-        depth_min = depth.min()
-        depth_max = depth.max()
+        disp_min = disp.min()
+        disp_max = disp.max()
 
-        if depth_max - depth_min > np.finfo("float").eps:
-            out = max_val * (depth - depth_min) / (depth_max - depth_min)
+        if disp_max - disp_min > np.finfo("float").eps:
+            out = (disp - disp_min) / (disp_max - disp_min)
         else:
-            out = np.zeros(depth.shape, dtype=depth.dtype)
-    else:  # save metric depth
-        out = depth * 256 if bits == 2 else depth
+            out = np.zeros(disp.shape, dtype=disp.dtype)
+
+    out = disp * max_val
+    print(
+        f"{path} {disp.min()=}, {disp.max()=} output min: {out.min()} max: {out.max()}"
+    )
     out = out.astype(dtype).squeeze()
 
     iio.imwrite(path, out)
@@ -65,8 +68,8 @@ def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
         bar.set_description(f"Input {img_file} output {out_path}")
         img = iio.imread(f"{img_dir}/{img_file}")
         pred_dict = run_model(model, img)
-        depth = pred_dict["depth"]
-        write_depth(out_path, depth, False)
+        disp = 1.0 / np.clip(pred_dict["depth"], a_min=1e-6, a_max=1e6)
+        write_disp(out_path, disp, False)
 
         K = pred_dict["intrinsics"]
         intrins_dict[img_name] = (
