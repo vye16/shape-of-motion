@@ -8,7 +8,6 @@ droid_dir = os.path.join(src_dir, "droid_slam")
 sys.path.extend([src_dir, droid_dir])
 
 import argparse
-import glob
 import json
 import time
 
@@ -17,10 +16,8 @@ import droid_backends
 import imageio.v2 as iio
 import numpy as np
 import torch
-import torch.nn.functional as F
 from droid import Droid
 from lietorch import SE3
-from torch.multiprocessing import Process
 from tqdm import tqdm
 
 
