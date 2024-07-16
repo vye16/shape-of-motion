@@ -99,9 +99,7 @@ class DavisDataset(BaseDataset):
         if camera_type == "droid_recon":
             img = self.get_image(0)
             H, W = img.shape[:2]
-            w2cs, Ks = load_cameras(
-                f"{root_dir}/{camera_type}/{res}/{seq_name}.npy", H, W
-            )
+            w2cs, Ks = load_cameras(f"{root_dir}/{camera_type}/{seq_name}.npy", H, W)
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")
         assert (
@@ -122,7 +120,8 @@ class DavisDataset(BaseDataset):
                 )
             else:
                 tracks_3d = self.get_tracks_3d(5000, step=self.num_frames // 10)[0]
-                scene_norm_dict = compute_scene_norm(tracks_3d, self.w2cs)
+                scale, transfm = compute_scene_norm(tracks_3d, self.w2cs)
+                scene_norm_dict = SceneNormDict(scale=scale, transfm=transfm)
                 os.makedirs(self.cache_dir, exist_ok=True)
                 torch.save(scene_norm_dict, cached_scene_norm_dict_path)
 
@@ -316,7 +315,6 @@ class DavisDataset(BaseDataset):
             bmax_y = min(H, bmax_y)
             overlap_mask = torch.ones_like(bool_mask)
             overlap_mask[bmin_y:bmax_y, bmin_x:bmax_x] = 0
-            guru.debug(f"{query_idx=} {overlap_mask.sum()=}")
 
             bool_mask &= overlap_mask
 
@@ -339,6 +337,7 @@ class DavisDataset(BaseDataset):
             points = points[sel_idcs]
             point_normals = point_normals[sel_idcs]
             point_colors = point_colors[sel_idcs]
+            guru.debug(f"{query_idx=} {points.shape=}")
             bg_geometry.append((points, point_normals, point_colors))
 
         bg_points, bg_normals, bg_colors = map(
@@ -418,7 +417,9 @@ def load_cameras(path: str, H: int, W: int) -> tuple[torch.Tensor, torch.Tensor]
     return torch.from_numpy(traj_w2c).float(), torch.from_numpy(Ks).float()
 
 
-def compute_scene_norm(X: torch.Tensor, w2cs: torch.Tensor) -> SceneNormDict:
+def compute_scene_norm(
+    X: torch.Tensor, w2cs: torch.Tensor
+) -> tuple[float, torch.Tensor]:
     """
     :param X: [N*T, 3]
     :param w2cs: [N, 4, 4]
@@ -436,7 +437,7 @@ def compute_scene_norm(X: torch.Tensor, w2cs: torch.Tensor) -> SceneNormDict:
         * original_up.dot(target_up).acos_()
     )
     transfm = rt_to_mat4(R, torch.einsum("ij,j->i", -R, scene_center))
-    return SceneNormDict(scale=scale, transfm=transfm)
+    return scale, transfm
 
 
 if __name__ == "__main__":
