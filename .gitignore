@@ -7,3 +7,7 @@ work_dirs/
 .vscode/
 .envrc
 .bak/
+datasets/
+
+preproc/checkpoints
+preproc/checkpoints/
