@@ -116,7 +116,7 @@ class DavisDataset(BaseDataset):
                 self.cache_dir, "scene_norm_dict.pth"
             )
             if os.path.exists(cached_scene_norm_dict_path) and self.load_from_cache:
-                print("loading cached scene norm dict...")
+                guru.info("loading cached scene norm dict...")
                 scene_norm_dict = torch.load(
                     os.path.join(self.cache_dir, "scene_norm_dict.pth")
                 )
@@ -261,24 +261,28 @@ class DavisDataset(BaseDataset):
         return tracks_3d, visibles, invisibles, confidences, colors
 
     def get_bkgd_points(
-        self, num_samples: int, start: int = 0, end: int = -1, step: int = 1, **kwargs
+        self,
+        num_samples: int,
+        stride: int = 8,
+        down_rate: int = 8,
+        **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        num_frames = self.num_frames
-        if end < 0:
-            end = num_frames + 1 + end
+        start = 0
+        end = self.num_frames
         H, W = self.get_image(0).shape[:2]
         grid = torch.stack(
             torch.meshgrid(
-                torch.arange(W, dtype=torch.float32),
-                torch.arange(H, dtype=torch.float32),
+                torch.arange(0, W, dtype=torch.float32),
+                torch.arange(0, H, dtype=torch.float32),
                 indexing="xy",
             ),
             dim=-1,
         )
-        query_idcs = list(range(start, end, step))
-        num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
-        cur_num = 0
-        bg = []
+        num_query_frames = self.num_frames // stride
+        query_endpts = torch.linspace(start, end, num_query_frames + 1)
+        query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
+
+        bg_geometry = []
         for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
             img = self.get_image(query_idx)
             depth = self.get_depth(query_idx)
@@ -286,6 +290,36 @@ class DavisDataset(BaseDataset):
             bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
             w2c = self.w2cs[query_idx]
             K = self.Ks[query_idx]
+
+            # get the bounding box of previous points that reproject into frame
+            bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
+            for p3d, _, _ in bg_geometry:
+                # reproject into current frame
+                p2d = torch.einsum(
+                    "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
+                )
+                p2d = p2d[:, :2] / p2d[:, 2:]
+                if len(p2d) < 1:
+                    continue
+                xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()
+                ymin, ymax = p2d[:, 1].min().item(), p2d[:, 1].max().item()
+
+                bmin_x = min(bmin_x, int(xmin))
+                bmin_y = min(bmin_y, int(ymin))
+                bmax_x = max(bmax_x, int(xmax))
+                bmax_y = max(bmax_y, int(ymax))
+
+            # don't include points that are covered by previous points
+            bmin_x = max(0, bmin_x)
+            bmin_y = max(0, bmin_y)
+            bmax_x = min(W, bmax_x)
+            bmax_y = min(H, bmax_y)
+            overlap_mask = torch.ones_like(bool_mask)
+            overlap_mask[bmin_y:bmax_y, bmin_x:bmax_x] = 0
+            guru.debug(f"{query_idx=} {overlap_mask.sum()=}")
+
+            bool_mask &= overlap_mask
+
             points = (
                 torch.einsum(
                     "ij,pj->pi",
@@ -299,15 +333,23 @@ class DavisDataset(BaseDataset):
             )
             point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
             point_colors = img[bool_mask]
-            num_sel = int(min(num_per_query_frame, num_samples - cur_num, len(points)))
-            if num_sel < len(points):
-                sel_idcs = np.random.choice(len(points), num_sel, replace=False)
-                points = points[sel_idcs]
-                point_normals = point_normals[sel_idcs]
-                point_colors = point_colors[sel_idcs]
-            cur_num += len(points)
-            bg.append((points, point_normals, point_colors))
-        bg_points, bg_normals, bg_colors = map(partial(torch.cat, dim=0), zip(*bg))
+            sel_idcs = np.random.choice(
+                len(points), len(points) // down_rate, replace=False
+            )
+            points = points[sel_idcs]
+            point_normals = point_normals[sel_idcs]
+            point_colors = point_colors[sel_idcs]
+            bg_geometry.append((points, point_normals, point_colors))
+
+        bg_points, bg_normals, bg_colors = map(
+            partial(torch.cat, dim=0), zip(*bg_geometry)
+        )
+        if len(bg_points) > num_samples:
+            sel_idcs = np.random.choice(len(bg_points), num_samples, replace=False)
+            bg_points = bg_points[sel_idcs]
+            bg_normals = bg_normals[sel_idcs]
+            bg_colors = bg_colors[sel_idcs]
+
         return bg_points, bg_normals, bg_colors
 
     def __getitem__(self, index: int):
@@ -365,7 +407,7 @@ class DavisDataset(BaseDataset):
 
 def load_cameras(path: str, H: int, W: int) -> tuple[torch.Tensor, torch.Tensor]:
     recon = np.load(path, allow_pickle=True).item()
-    print(f"{recon.keys()=}")
+    guru.debug(f"{recon.keys()=}")
     traj_c2w = recon["traj_c2w"]  # (N, 4, 4)
     h, w = recon["img_shape"]
     sy, sx = H / h, W / w
