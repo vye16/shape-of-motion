@@ -106,6 +106,7 @@ def main(cfg: TrainConfig):
         train_dataset,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_dl_workers,
+        persistent_workers=True,
         collate_fn=BaseDataset.train_collate_fn,
     )
 
