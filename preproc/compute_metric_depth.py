@@ -65,10 +65,13 @@ def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
     for img_file in (bar := tqdm(img_files)):
         img_name = os.path.splitext(img_file)[0]
         out_path = f"{depth_dir}/{img_name}.png"
-        bar.set_description(f"Input {img_file} output {out_path}")
         img = iio.imread(f"{img_dir}/{img_file}")
         pred_dict = run_model(model, img)
-        disp = 1.0 / np.clip(pred_dict["depth"], a_min=1e-6, a_max=1e6)
+        depth = pred_dict["depth"]
+        disp = 1.0 / np.clip(depth, a_min=1e-6, a_max=1e6)
+        bar.set_description(
+            f"Input {img_file} {depth.min()} {depth.max()}"
+        )
         write_disp(out_path, disp, False)
 
         K = pred_dict["intrinsics"]

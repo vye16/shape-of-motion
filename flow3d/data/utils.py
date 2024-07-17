@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules.utils import _pair, _quadruple
 
+UINT16_MAX = 65535
 
 class SceneNormDict(TypedDict):
     scale: float

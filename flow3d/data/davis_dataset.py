@@ -22,6 +22,7 @@ from flow3d.data.utils import (
     normal_from_depth_image,
     normalize_coords,
     parse_tapir_track_info,
+    UINT16_MAX,
 )
 from flow3d.transforms import rt_to_mat4
 from flow3d.vis.utils import get_server
@@ -99,7 +100,9 @@ class DavisDataset(BaseDataset):
         if camera_type == "droid_recon":
             img = self.get_image(0)
             H, W = img.shape[:2]
-            w2cs, Ks = load_cameras(f"{root_dir}/{camera_type}/{seq_name}.npy", H, W)
+            w2cs, Ks, tstamps = load_cameras(
+                f"{root_dir}/{camera_type}/{seq_name}.npy", H, W
+            )
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")
         assert (
@@ -107,6 +110,8 @@ class DavisDataset(BaseDataset):
         ), f"{len(frame_names)}, {len(w2cs)}, {len(Ks)}"
         self.w2cs = w2cs[start:end]
         self.Ks = Ks[start:end]
+        tmask = (tstamps >= start) & (tstamps < end)
+        self.tstamps = tstamps[tmask]
         self.scale = 1
 
         if scene_norm_dict is None:
@@ -190,7 +195,7 @@ class DavisDataset(BaseDataset):
         path = f"{self.depth_dir}/{self.frame_names[index]}.png"
         disp = imageio.imread(path)
         if disp.dtype == np.uint16:
-            disp = disp.astype(np.float32) / 65535.0
+            disp = disp.astype(np.float32) / UINT16_MAX
         depth = 1.0 / np.clip(disp, a_min=1e-6, a_max=1e6)
         depth = torch.from_numpy(depth)
         depth = median_filter_2d(depth[None, None], 11, 1)[0, 0]
@@ -262,6 +267,7 @@ class DavisDataset(BaseDataset):
     def get_bkgd_points(
         self,
         num_samples: int,
+        use_kf_tstamps: bool = True,
         stride: int = 8,
         down_rate: int = 8,
         **kwargs,
@@ -277,9 +283,13 @@ class DavisDataset(BaseDataset):
             ),
             dim=-1,
         )
-        num_query_frames = self.num_frames // stride
-        query_endpts = torch.linspace(start, end, num_query_frames + 1)
-        query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
+
+        if use_kf_tstamps:
+            query_idcs = self.tstamps.tolist()
+        else:
+            num_query_frames = self.num_frames // stride
+            query_endpts = torch.linspace(start, end, num_query_frames + 1)
+            query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
 
         bg_geometry = []
         for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
@@ -404,7 +414,10 @@ class DavisDataset(BaseDataset):
         return data
 
 
-def load_cameras(path: str, H: int, W: int) -> tuple[torch.Tensor, torch.Tensor]:
+def load_cameras(
+    path: str, H: int, W: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    assert os.path.exists(path), f"Camera file {path} does not exist."
     recon = np.load(path, allow_pickle=True).item()
     guru.debug(f"{recon.keys()=}")
     traj_c2w = recon["traj_c2w"]  # (N, 4, 4)
@@ -414,7 +427,12 @@ def load_cameras(path: str, H: int, W: int) -> tuple[torch.Tensor, torch.Tensor]
     fx, fy, cx, cy = recon["intrinsics"]  # (4,)
     K = np.array([[fx * sx, 0, cx * sx], [0, fy * sy, cy * sy], [0, 0, 1]])  # (3, 3)
     Ks = np.tile(K[None, ...], (len(traj_c2w), 1, 1))  # (N, 3, 3)
-    return torch.from_numpy(traj_w2c).float(), torch.from_numpy(Ks).float()
+    kf_tstamps = recon["tstamps"].astype("int")
+    return (
+        torch.from_numpy(traj_w2c).float(),
+        torch.from_numpy(Ks).float(),
+        torch.from_numpy(kf_tstamps),
+    )
 
 
 def compute_scene_norm(
