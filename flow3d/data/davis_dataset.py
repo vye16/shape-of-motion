@@ -16,13 +16,13 @@ from tqdm import tqdm
 
 from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.utils import (
+    UINT16_MAX,
     SceneNormDict,
     get_tracks_3d_for_query_frame,
     median_filter_2d,
     normal_from_depth_image,
     normalize_coords,
     parse_tapir_track_info,
-    UINT16_MAX,
 )
 from flow3d.transforms import rt_to_mat4
 from flow3d.vis.utils import get_server

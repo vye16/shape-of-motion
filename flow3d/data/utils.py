@@ -8,6 +8,7 @@ from torch.nn.modules.utils import _pair, _quadruple
 
 UINT16_MAX = 65535
 
+
 class SceneNormDict(TypedDict):
     scale: float
     transfm: torch.Tensor

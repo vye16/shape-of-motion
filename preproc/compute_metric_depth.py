@@ -69,9 +69,7 @@ def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
         pred_dict = run_model(model, img)
         depth = pred_dict["depth"]
         disp = 1.0 / np.clip(depth, a_min=1e-6, a_max=1e6)
-        bar.set_description(
-            f"Input {img_file} {depth.min()} {depth.max()}"
-        )
+        bar.set_description(f"Input {img_file} {depth.min()} {depth.max()}")
         write_disp(out_path, disp, False)
 
         K = pred_dict["intrinsics"]
