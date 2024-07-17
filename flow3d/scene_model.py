@@ -158,33 +158,43 @@ class SceneModel(nn.Module):
         # Multiple time instances for track rendering: (B,).
         target_ts: torch.Tensor | None = None,  # (B)
         target_w2cs: torch.Tensor | None = None,  # (B, 4, 4)
-        fg_only_tracks: bool = False,
         bg_color: torch.Tensor | float = 1.0,
         colors_override: torch.Tensor | None = None,
         means: torch.Tensor | None = None,
         quats: torch.Tensor | None = None,
         target_means: torch.Tensor | None = None,
+        return_color: bool = True,
         return_depth: bool = False,
         return_mask: bool = False,
+        fg_only: bool = False,
+        filter_mask: torch.Tensor | None = None,
     ) -> dict:
         device = w2cs.device
         C = w2cs.shape[0]
 
         W, H = img_wh
+        pose_fnc = self.compute_poses_fg if fg_only else self.compute_poses_all
+        N = self.num_fg_gaussians if fg_only else self.num_gaussians
 
         if means is None or quats is None:
-            means, quats = self.compute_poses_all(
+            means, quats = pose_fnc(
                 torch.tensor([t], device=device) if t is not None else None
             )
             means = means[:, 0]
             quats = quats[:, 0]
 
         if colors_override is None:
-            colors_override = self.get_colors_all()
+            if return_color:
+                colors_override = (
+                    self.fg.get_colors() if fg_only else self.get_colors_all()
+                )
+            else:
+                colors_override = torch.zeros(N, 0, device=device)
+
         D = colors_override.shape[-1]
 
-        scales = self.get_scales_all()
-        opacities = self.get_opacities_all()
+        scales = self.fg.get_scales() if fg_only else self.get_scales_all()
+        opacities = self.fg.get_opacities() if fg_only else self.get_opacities_all()
 
         if isinstance(bg_color, float):
             bg_color = torch.full((C, D), bg_color, device=device)
@@ -193,25 +203,27 @@ class SceneModel(nn.Module):
         mode = "RGB"
         ds_expected = {"img": D}
 
-        return_mask &= self.has_bg
         if return_mask:
-            mask_values = torch.zeros((self.num_gaussians, 1), device=device)
-            mask_values[: self.num_fg_gaussians] = 1.0
+            if self.has_bg and not fg_only:
+                mask_values = torch.zeros((self.num_gaussians, 1), device=device)
+                mask_values[: self.num_fg_gaussians] = 1.0
+            else:
+                mask_values = torch.ones((self.num_fg_gaussians, 1), device=device)
             colors_override = torch.cat([colors_override, mask_values], dim=-1)
             bg_color = torch.cat([bg_color, torch.zeros(C, 1, device=device)], dim=-1)
             ds_expected["mask"] = 1
 
         B = 0
         if target_ts is not None:
-            if target_means is None:
-                target_means, _ = self.compute_poses_all(target_ts)  # [G, B, 3]
-            assert target_w2cs is not None
             B = target_ts.shape[0]
-            target_means = torch.einsum(
-                "bij,pbj->pbi",
-                target_w2cs[:, :3],
-                F.pad(target_means, (0, 1), value=1.0),
-            )
+            if target_means is None:
+                target_means, _ = pose_fnc(target_ts)  # [G, B, 3]
+            if target_w2cs is not None:
+                target_means = torch.einsum(
+                    "bij,pbj->pbi",
+                    target_w2cs[:, :3],
+                    F.pad(target_means, (0, 1), value=1.0),
+                )
             track_3d_vals = target_means.flatten(-2)  # (G, B * 3)
             d_track = track_3d_vals.shape[-1]
             colors_override = torch.cat([colors_override, track_3d_vals], dim=-1)
@@ -227,6 +239,14 @@ class SceneModel(nn.Module):
         if return_depth:
             mode = "RGB+ED"
             ds_expected["depth"] = 1
+
+        if filter_mask is not None:
+            assert filter_mask.shape == (N,)
+            means = means[filter_mask]
+            quats = quats[filter_mask]
+            scales = scales[filter_mask]
+            opacities = opacities[filter_mask]
+            colors_override = colors_override[filter_mask]
 
         render_colors, alphas, info = rasterization(
             means=means,

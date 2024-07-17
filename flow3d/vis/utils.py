@@ -1,9 +1,10 @@
+import colorsys
+
 import cv2
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
+from matplotlib import colormaps
 from viser import ViserServer
 
 
@@ -61,7 +62,7 @@ def draw_keypoints_video(
     """
     if colors is None:
         label = np.linspace(0, 1, kps.shape[0])
-        colors = np.asarray(plt.get_cmap(cmap)(label))[..., :3]
+        colors = np.asarray(colormaps.get_cmap(cmap)(label))[..., :3]
     out_frames = []
     for t in range(len(imgs)):
         occ = occs[:, t] if occs is not None else None
@@ -87,6 +88,60 @@ def draw_keypoints_cv2(img, kps, colors=None, occs=None, radius=3):
         thickness = -1 if occs is None or occs[n] == 0 else 1
         out_img = cv2.circle(out_img, kp, radius, color, thickness, cv2.LINE_AA)
     return out_img
+
+
+def draw_tracks_2d(
+    img: torch.Tensor,
+    tracks_2d: torch.Tensor,
+    track_point_size: int = 2,
+    track_line_width: int = 1,
+    cmap_name: str = "gist_rainbow",
+):
+    cmap = colormaps.get_cmap(cmap_name)
+    # (H, W, 3).
+    img_np = (img.cpu().numpy() * 255.0).astype(np.uint8)
+    # (P, N, 2).
+    tracks_2d_np = tracks_2d.cpu().numpy()
+
+    num_tracks, num_frames = tracks_2d_np.shape[:2]
+
+    canvas = img_np.copy()
+    for i in range(num_frames - 1):
+        alpha = max(1 - 0.9 * ((num_frames - 1 - i) / (num_frames * 0.99)), 0.1)
+        img_curr = canvas.copy()
+        for j in range(num_tracks):
+            color = tuple(np.array(cmap(j / max(1, float(num_tracks - 1)))[:3]) * 255)
+            color_alpha = 1
+            hsv = colorsys.rgb_to_hsv(color[0], color[1], color[2])
+            color = colorsys.hsv_to_rgb(hsv[0], hsv[1] * color_alpha, hsv[2])
+            pt1 = tracks_2d_np[j, i]
+            pt2 = tracks_2d_np[j, i + 1]
+            p1 = (int(round(pt1[0])), int(round(pt1[1])))
+            p2 = (int(round(pt2[0])), int(round(pt2[1])))
+            img_curr = cv2.line(
+                img_curr,
+                p1,
+                p2,
+                color,
+                thickness=track_line_width,
+                lineType=cv2.LINE_AA,
+            )
+        canvas = cv2.addWeighted(img_curr, alpha, canvas, 1 - alpha, 0)
+
+    for j in range(num_tracks):
+        color = tuple(np.array(cmap(j / max(1, float(num_tracks - 1)))[:3]) * 255)
+        pt = tracks_2d_np[j, -1]
+        pt = (int(round(pt[0])), int(round(pt[1])))
+        canvas = cv2.circle(
+            canvas,
+            pt,
+            track_point_size,
+            color,
+            thickness=-1,
+            lineType=cv2.LINE_AA,
+        )
+
+    return canvas
 
 
 def make_video_divisble(
@@ -117,7 +172,7 @@ def apply_float_colormap(img: torch.Tensor, colormap: str = "turbo") -> torch.Te
     assert img_long_min >= 0, f"the min value is {img_long_min}"
     assert img_long_max <= 255, f"the max value is {img_long_max}"
     return torch.tensor(
-        matplotlib.colormaps[colormap].colors,  # type: ignore
+        colormaps[colormap].colors,  # type: ignore
         device=img.device,
     )[img_long[..., 0]]
 
@@ -197,10 +252,9 @@ def drawMatches(
 
     set_max = range(128)
     colors = {m: i for i, m in enumerate(set_max)}
+    hsv = colormaps.get_cmap("hsv")
     colors = {
-        m: (255 * np.array(plt.cm.hsv(i / float(len(colors))))[:3][::-1]).astype(
-            np.int32
-        )
+        m: (255 * np.array(hsv(i / float(len(colors))))[:3][::-1]).astype(np.int32)
         for m, i in colors.items()
     }
 
