@@ -6,50 +6,34 @@ from concurrent.futures import ProcessPoolExecutor
 
 def main(args):
     if args.dataset == "davis":
-        launch_davis(args)
-    elif args.dataset == "kubric":
-        launch_kubric(args)
+        img_root = f"{args.data_root}/JPEGImages/{args.res}"
+        mask_root = f"{args.data_root}/Annotations/{args.res}"
+        out_root = f"{args.data_root}/{args.model_type}/{args.res}"
     else:
-        raise ValueError(f"Unknown dataset: {args.dataset}")
+        img_root = f"{args.data_root}/{args.image_name}"
+        mask_root = f"{args.data_root}/{args.mask_name}"
+        out_root = f"{args.data_root}/{args.model_type}"
+
+    launch_batch(
+        args.gpus, args.seq_names, img_root, mask_root, out_root, args.model_type
+    )
 
 
-def launch_davis(args):
-    seq_names = args.seq_names
-    img_root = f"{args.data_root}/JPEGImages/{args.res}"
-    mask_root = f"{args.data_root}/Annotations/{args.res}"
-    out_root = f"{args.data_root}/2d_tracks/{args.res}"
+def launch_batch(gpus, seq_names, img_root, mask_root, out_root, model_type):
     if len(seq_names) == 0:
         seq_names = sorted(os.listdir(img_root))
 
-    with ProcessPoolExecutor(max_workers=len(args.gpus)) as executor:
+    with ProcessPoolExecutor(max_workers=len(gpus)) as executor:
         for i, seq_name in enumerate(seq_names):
-            gpu = args.gpus[i % len(args.gpus)]
+            gpu = gpus[i % len(gpus)]
             cmd = (
                 f"CUDA_VISIBLE_DEVICES={gpu} python compute_tracks_pairwise.py "
+                f"--model_type {model_type} "
                 f"--image_dir {img_root}/{seq_name} "
                 f"--mask_dir {mask_root}/{seq_name} "
                 f"--out_dir {out_root}/{seq_name}"
             )
-            executor.submit(subprocess.run, cmd, shell=True)
-
-
-def launch_kubric(args):
-    seq_names = args.seq_names
-    img_root = f"{args.data_root}/images"
-    mask_root = f"{args.data_root}/masks"
-    out_root = f"{args.data_root}/2d_tracks"
-    if len(seq_names) == 0:
-        seq_names = sorted(os.listdir(img_root))
-
-    with ProcessPoolExecutor(max_workers=len(args.gpus)) as executor:
-        for i, seq_name in enumerate(seq_names):
-            gpu = args.gpus[i % len(args.gpus)]
-            cmd = (
-                f"CUDA_VISIBLE_DEVICES={gpu} python compute_tracks_faster.py "
-                f"--image_dir {img_root}/{seq_name} "
-                f"--mask_dir {mask_root}/{seq_name} "
-                f"--out_dir {out_root}/{seq_name}"
-            )
+            print(cmd)
             executor.submit(subprocess.run, cmd, shell=True)
 
 
@@ -59,7 +43,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seq_names", nargs="*", type=str, default=[], help="seq names"
     )
-    parser.add_argument("--dataset", type=str, default="davis", help="method")
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        choices=["bootstapir", "tapir"],
+        default="bootstapir",
+        help="which tapir checkpoint to use",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="davis",
+        choices=["davis", "custom"],
+        help="method",
+    )
+    parser.add_argument("--img_name", type=str, default="images", help="image name")
+    parser.add_argument("--mask_name", type=str, default="masks", help="image name")
     parser.add_argument("--res", type=str, default="480p", help="resolution")
     parser.add_argument("--gpus", nargs="+", type=int, default=[0])
     args = parser.parse_args()

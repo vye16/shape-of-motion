@@ -23,10 +23,13 @@ parser.add_argument("--resize_height", type=int, default=256, help="resize heigh
 parser.add_argument("--resize_width", type=int, default=256, help="resize width")
 parser.add_argument("--num_points", type=int, default=200, help="num points")
 parser.add_argument(
-    "--checkpoint",
+    "--model_type", type=str, choices=["tapir", "bootstapir"], help="model type"
+)
+parser.add_argument(
+    "--ckpt_dir",
     type=str,
-    default="checkpoints/tapir_checkpoint_panning.npy",
-    help="checkpoint",
+    default="checkpoints",
+    help="checkpoint dir",
 )
 args = parser.parse_args()
 
@@ -45,7 +48,15 @@ def gen_grid_np(h, w, normalize=False, homogeneous=False):
     return grid  # [h, w, 2 or 3]
 
 
-ckpt_state = np.load(args.checkpoint, allow_pickle=True).item()
+## Load model
+ckpt_file = (
+    "tapir_checkpoint_panning.npy"
+    if args.model_type == "tapir"
+    else "bootstapir_checkpoint_v2.npy"
+)
+ckpt_path = os.path.join(args.ckpt_dir, ckpt_file)
+
+ckpt_state = np.load(ckpt_path, allow_pickle=True).item()
 params, state = ckpt_state["params"], ckpt_state["state"]
 
 
