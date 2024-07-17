@@ -1,13 +1,14 @@
 import os
+import os
 import sys
 
 basedir = os.path.dirname(os.path.abspath(__file__))
+rootdir = os.path.dirname(basedir)
 src_dir = os.path.join(basedir, "DROID-SLAM")
 droid_dir = os.path.join(src_dir, "droid_slam")
 sys.path.extend([src_dir, droid_dir])
 
 import argparse
-import glob
 import json
 import time
 
@@ -16,10 +17,8 @@ import droid_backends
 import imageio.v2 as iio
 import numpy as np
 import torch
-import torch.nn.functional as F
 from droid import Droid
 from lietorch import SE3
-from torch.multiprocessing import Process
 from tqdm import tqdm
 
 
@@ -81,7 +80,7 @@ def image_stream(image_dir, calib_path, stride, depth_dir: str | None = None):
 
         if depth_dir is not None:
             depth_path = f"{depth_dir}/{imname}.png"
-            depth = iio.imread(depth_path) / 256
+            depth = iio.imread(depth_path) / 65535.0
             depth, (dh0, dw0), (dh1, dw1) = preproc_image(depth, calib)
             assert dh0 == h0 and dw0 == w0 and dh1 == h1 and dw1 == w1
             depth = torch.as_tensor(depth).float()
@@ -187,7 +186,7 @@ if __name__ == "__main__":
     parser.add_argument("--t0", default=0, type=int, help="starting frame")
     parser.add_argument("--stride", default=1, type=int, help="frame stride")
 
-    parser.add_argument("--weights", default="droid.pth")
+    parser.add_argument("--weights", default="checkpoints/droid.pth")
     parser.add_argument("--buffer", type=int, default=512)
     parser.add_argument("--image_size", default=[240, 320])
     parser.add_argument("--disable_vis", action="store_true", default=True)
@@ -260,7 +259,7 @@ if __name__ == "__main__":
             args.image_size = [image.shape[2], image.shape[3]]
             droid = Droid(args)
 
-        print(f"{t=} {image.shape=} {depth.shape if depth is not None else None}")
+        # print(f"{t=} {image.shape=} {depth.shape if depth is not None else None}")
         droid.track(t, image, depth=depth, intrinsics=intrinsics)
 
     traj_est = droid.terminate(image_stream(args.image_dir, args.calib, args.stride))

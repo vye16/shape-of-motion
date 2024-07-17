@@ -10,11 +10,11 @@ import imageio.v2 as iio
 import numpy as np
 import torch
 from PIL import Image
-from pycolmap import SceneManager
 from tqdm import tqdm
 from transformers import Pipeline, pipeline
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+UINT16_MAX = 65535
 
 
 models = {
@@ -30,13 +30,11 @@ def get_pipeline(model_name: str):
 
 
 def to_uint16(disp: np.ndarray):
-    max_val = 65535
-
     disp_min = disp.min()
     disp_max = disp.max()
 
     if disp_max - disp_min > np.finfo("float").eps:
-        disp_uint16 = max_val * (disp - disp_min) / (disp_max - disp_min)
+        disp_uint16 = UINT16_MAX * (disp - disp_min) / (disp_max - disp_min)
     else:
         disp_uint16 = np.zeros(disp.shape, dtype=disp.dtype)
     disp_uint16 = disp_uint16.astype(np.uint16)
@@ -87,12 +85,51 @@ def save_disp_from_dir(
         iio.imwrite(out_file, disp)
 
 
+def align_monodepth_with_metric_depth(
+    metric_depth_dir: str,
+    input_monodepth_dir: str,
+    output_monodepth_dir: str,
+    matching_pattern: str = "*",
+):
+    print(
+        f"Aligning monodepth in {input_monodepth_dir} with metric depth in {metric_depth_dir}"
+    )
+    mono_paths = sorted(glob(f"{input_monodepth_dir}/{matching_pattern}"))
+    img_files = [osp.basename(p) for p in mono_paths]
+    os.makedirs(output_monodepth_dir, exist_ok=True)
+    if len(os.listdir(output_monodepth_dir)) == len(img_files):
+        print(f"Founds {len(img_files)} files in {output_monodepth_dir}, skipping")
+        return
+
+    for f in tqdm(img_files):
+        metric_path = osp.join(metric_depth_dir, f)
+        mono_path = osp.join(input_monodepth_dir, f)
+        mono_disp_map = iio.imread(mono_path) / UINT16_MAX
+        metric_disp_map = iio.imread(metric_path) / UINT16_MAX
+        ms_colmap_disp = metric_disp_map - np.median(metric_disp_map) + 1e-8
+        ms_mono_disp = mono_disp_map - np.median(mono_disp_map) + 1e-8
+
+        scale = np.median(ms_colmap_disp / ms_mono_disp)
+        shift = np.median(metric_disp_map - scale * mono_disp_map)
+
+        aligned_disp = scale * mono_disp_map + shift
+
+        min_thre = min(1e-6, np.quantile(aligned_disp, 0.01))
+        # set depth values that are too small to invalid (0)
+        aligned_disp[aligned_disp < min_thre] = 0.0
+        aligned_disp_uint16 = (aligned_disp * UINT16_MAX).astype(np.uint16)
+        out_file = osp.join(output_monodepth_dir, f)
+        iio.imwrite(out_file, aligned_disp_uint16)
+
+
 def align_monodepth_with_colmap(
     sparse_dir: str,
     input_monodepth_dir: str,
     output_monodepth_dir: str,
     matching_pattern: str = "*",
 ):
+    from pycolmap import SceneManager
+
     manager = SceneManager(sparse_dir)
     manager.load()
 
@@ -129,7 +166,7 @@ def align_monodepth_with_colmap(
         monodepth_path = osp.join(
             input_monodepth_dir, osp.splitext(image.name)[0] + ".png"
         )
-        mono_disp_map = iio.imread(monodepth_path) / 65535.0
+        mono_disp_map = iio.imread(monodepth_path) / UINT16_MAX
 
         colmap_disp = 1.0 / np.clip(colmap_depth, a_min=1e-6, a_max=1e6)
         mono_disp = cv2.remap(
@@ -166,8 +203,9 @@ def main():
     )
     parser.add_argument("--img_dir", type=str, required=True)
     parser.add_argument("--out_raw_dir", type=str, required=True)
-    parser.add_argument("--out_aligned_dir", type=str, required=True)
-    parser.add_argument("--sparse_dir", type=str, required=True)
+    parser.add_argument("--out_aligned_dir", type=str, default=None)
+    parser.add_argument("--sparse_dir", type=str, default=None)
+    parser.add_argument("--metric_dir", type=str, default=None)
     parser.add_argument("--matching_pattern", type=str, default="*")
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
@@ -179,17 +217,29 @@ def main():
     save_disp_from_dir(
         args.model, args.img_dir, args.out_raw_dir, args.matching_pattern
     )
-    align_monodepth_with_colmap(
-        args.sparse_dir, args.out_raw_dir, args.out_aligned_dir, args.matching_pattern
-    )
+    if args.sparse_dir is not None and args.out_aligned_dir is not None:
+        align_monodepth_with_colmap(
+            args.sparse_dir,
+            args.out_raw_dir,
+            args.out_aligned_dir,
+            args.matching_pattern,
+        )
+
+    elif args.metric_dir is not None and args.out_aligned_dir is not None:
+        align_monodepth_with_metric_depth(
+            args.metric_dir,
+            args.out_raw_dir,
+            args.out_aligned_dir,
+            args.matching_pattern,
+        )
 
 
 if __name__ == "__main__":
     """ example usage for iphone dataset:
     python compute_depth.py \
         --img_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/rgb/1x \
-        --out_raw_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/depth_anything_v2 \
-        --out_aligned_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/aligned_depth_anything_v2 \
+        --out_raw_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/depth_anything_v2/1x \
+        --out_aligned_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/aligned_depth_anything_v2/1x \
         --sparse_dir /home/qianqianwang_google_com/datasets/iphone/dycheck/paper-windmill/flow3d_preprocessed/colmap/sparse \
         --matching_pattern "0_*"
     """

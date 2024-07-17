@@ -1,0 +1,4 @@
+root = true
+
+[*.py]
+profile = black

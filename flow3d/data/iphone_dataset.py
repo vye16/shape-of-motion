@@ -11,6 +11,7 @@ import numpy as np
 import roma
 import torch
 import torch.nn.functional as F
+import tyro
 from loguru import logger as guru
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -41,8 +42,8 @@ class iPhoneDataConfig:
     ] = "depth_anything_colmap"
     camera_type: Literal["original", "refined"] = "refined"
     use_median_filter: bool = False
-    num_targets_per_frame: int = 1
-    scene_norm_dict: SceneNormDict | None = None
+    num_targets_per_frame: int = 4
+    scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     load_from_cache: bool = False
     skip_load_imgs: bool = False
 
@@ -67,9 +68,9 @@ class iPhoneDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         load_from_cache: bool = False,
         skip_load_imgs: bool = False,
-        **kwargs,
+        **_,
     ):
-        super().__init__(**kwargs)
+        super().__init__()
 
         self.data_dir = data_dir
         self.training = split == "train"
@@ -321,7 +322,7 @@ class iPhoneDataset(BaseDataset):
                 original_up = -F.normalize(self.w2cs[:, 1, :3].mean(0), dim=-1)
                 target_up = original_up.new_tensor([0.0, 0.0, 1.0])
                 R = roma.rotvec_to_rotmat(
-                    F.normalize(original_up.cross(target_up), dim=-1)
+                    F.normalize(original_up.cross(target_up, dim=-1), dim=-1)
                     * original_up.dot(target_up).acos_()
                 )
                 transfm = rt_to_mat4(R, torch.einsum("ij,j->i", -R, scene_center))
@@ -355,6 +356,20 @@ class iPhoneDataset(BaseDataset):
 
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
+
+    def get_image(self, index: int) -> torch.Tensor:
+        return self.imgs[index]
+
+    def get_depth(self, index: int) -> torch.Tensor:
+        return self.depths[index]
+
+    def get_masks(self, index: int) -> torch.Tensor:
+        return self.masks[index]
+
+    def get_img_wh(self) -> tuple[int, int]:
+        return iio.imread(
+            osp.join(self.data_dir, f"rgb/{self.factor}x/{self.frame_names[0]}.png")
+        ).shape[1::-1]
 
     # def get_sam_features(self) -> list[torch.Tensor, tuple[int, int], tuple[int, int]]:
     #     return self.sam_features, self.sam_original_size, self.sam_input_size

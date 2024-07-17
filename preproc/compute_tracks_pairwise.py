@@ -1,22 +1,12 @@
-import os
-
-basedir = os.path.dirname(os.path.abspath(__file__))
-tap_dir = os.path.join(basedir, "tapnet")
-
-import sys
-
-sys.path.extend([tap_dir, basedir])
 import argparse
 import functools
 import glob
 import os
-import subprocess
 
 import haiku as hk
 import imageio
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import mediapy as media
 import numpy as np
 import tree
@@ -25,8 +15,21 @@ from tapnet import tapir_model
 from tapnet.utils import transforms, viz_utils
 from tqdm import tqdm
 
-# from google.colab import output
-# output.enable_custom_widget_manager()
+parser = argparse.ArgumentParser()
+parser.add_argument("--image_dir", type=str, required=True, help="image dir")
+parser.add_argument("--mask_dir", type=str, required=True, help="mask dir")
+parser.add_argument("--out_dir", type=str, required=True, help="out dir")
+parser.add_argument("--grid_size", type=int, default=4, help="grid size")
+parser.add_argument("--resize_height", type=int, default=256, help="resize height")
+parser.add_argument("--resize_width", type=int, default=256, help="resize width")
+parser.add_argument("--num_points", type=int, default=200, help="num points")
+parser.add_argument(
+    "--checkpoint",
+    type=str,
+    default="checkpoints/tapir_checkpoint_panning.npy",
+    help="checkpoint",
+)
+args = parser.parse_args()
 
 
 def gen_grid_np(h, w, normalize=False, homogeneous=False):
@@ -43,8 +46,7 @@ def gen_grid_np(h, w, normalize=False, homogeneous=False):
     return grid  # [h, w, 2 or 3]
 
 
-checkpoint_path = "checkpoints/tapir_checkpoint_panning.npy"
-ckpt_state = np.load(checkpoint_path, allow_pickle=True).item()
+ckpt_state = np.load(args.checkpoint, allow_pickle=True).item()
 params, state = ckpt_state["params"], ckpt_state["state"]
 
 
@@ -185,18 +187,6 @@ def read_video(folder_path):
     return video
 
 
-# seq_name = 'lab-coat'
-# data_dir = '/home/qw246/data/davis_tapir/{}'.format(seq_name)
-parser = argparse.ArgumentParser()
-parser.add_argument("--image_dir", type=str, required=True, help="image dir")
-parser.add_argument("--mask_dir", type=str, required=True, help="mask dir")
-parser.add_argument("--out_dir", type=str, required=True, help="out dir")
-parser.add_argument("--grid_size", type=int, default=8, help="grid size")
-parser.add_argument("--resize_height", type=int, default=256, help="resize height")
-parser.add_argument("--resize_width", type=int, default=256, help="resize width")
-parser.add_argument("--num_points", type=int, default=200, help="num points")
-args = parser.parse_args()
-
 resize_height = args.resize_height
 resize_width = args.resize_width
 num_points = args.num_points
@@ -207,16 +197,30 @@ mask_dir = args.mask_dir
 frame_names = [
     os.path.basename(f) for f in sorted(glob.glob(os.path.join(folder_path, "*")))
 ]
+# data_dir = args.data_dir
+# out_dir = os.path.join(data_dir, "2d_tracks")
+out_dir = args.out_dir
+os.makedirs(out_dir, exist_ok=True)
+
+done = True
+for t in range(len(frame_names)):
+    for j in range(len(frame_names)):
+        name_t = os.path.splitext(frame_names[t])[0]
+        name_j = os.path.splitext(frame_names[j])[0]
+        out_path = f"{out_dir}/{name_t}_{name_j}.npy"
+        if not os.path.exists(out_path):
+            done = False
+            break
+print(f"{done=}")
+if done:
+    print("Already done")
+    exit()
+
 video = read_video(folder_path)
 num_frames, height, width = video.shape[0:3]
 masks = read_video(mask_dir)
 masks = (masks.reshape((num_frames, height, width, -1)) > 0).any(axis=-1)
 print(f"{video.shape=} {masks.shape=} {masks.max()=} {masks.sum()=}")
-
-# data_dir = args.data_dir
-# out_dir = os.path.join(data_dir, "2d_tracks")
-out_dir = args.out_dir
-os.makedirs(out_dir, exist_ok=True)
 
 frames = media.resize_video(video, (resize_height, resize_width))
 print(f"{frames.shape=}")

@@ -1,24 +1,31 @@
 import os
+import time
 from dataclasses import dataclass
 from functools import partial
-from typing import Literal
+from typing import Literal, cast
 
+import cv2
 import imageio
 import numpy as np
 import torch
 import torch.nn.functional as F
+import tyro
+from loguru import logger as guru
 from roma import roma
 from tqdm import tqdm
 
 from flow3d.data.base_dataset import BaseDataset
 from flow3d.data.utils import (
+    UINT16_MAX,
     SceneNormDict,
     get_tracks_3d_for_query_frame,
+    median_filter_2d,
     normal_from_depth_image,
     normalize_coords,
     parse_tapir_track_info,
 )
 from flow3d.transforms import rt_to_mat4
+from flow3d.vis.utils import get_server
 
 
 @dataclass
@@ -28,10 +35,16 @@ class DavisDataConfig:
     start: int = 0
     end: int = -1
     res: str = "480p"
-    depth_type: Literal["depth_anything", "unidepth"] = "unidepth"
+    depth_type: Literal[
+        "aligned_depth_anything",
+        "aligned_depth_anything_v2",
+        "depth_anything",
+        "depth_anything_v2",
+        "unidepth_disp",
+    ] = "aligned_depth_anything"
     camera_type: Literal["droid_recon"] = "droid_recon"
-    scene_norm_dict: SceneNormDict | None = None
-    num_targets_per_frame: int = 1
+    scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
+    num_targets_per_frame: int = 4
     load_from_cache: bool = False
 
 
@@ -43,14 +56,21 @@ class DavisDataset(BaseDataset):
         start: int = 0,
         end: int = -1,
         res: str = "480p",
-        depth_type: Literal["depth_anything", "unidepth"] = "unidepth",
+        depth_type: Literal[
+            "aligned_depth_anything",
+            "aligned_depth_anything_v2",
+            "depth_anything",
+            "depth_anything_v2",
+            "unidepth_disp",
+        ] = "aligned_depth_anything",
         camera_type: Literal["droid_recon"] = "droid_recon",
         scene_norm_dict: SceneNormDict | None = None,
-        num_targets_per_frame: int = 1,
+        num_targets_per_frame: int = 4,
         load_from_cache: bool = False,
-        **kwargs,
+        **_,
     ):
         super().__init__()
+
         self.seq_name = seq_name
         self.root_dir = root_dir
         self.res = res
@@ -80,8 +100,8 @@ class DavisDataset(BaseDataset):
         if camera_type == "droid_recon":
             img = self.get_image(0)
             H, W = img.shape[:2]
-            w2cs, Ks = load_cameras(
-                f"{root_dir}/{camera_type}/{res}/{seq_name}.npy", H, W
+            w2cs, Ks, tstamps = load_cameras(
+                f"{root_dir}/{camera_type}/{seq_name}.npy", H, W
             )
         else:
             raise ValueError(f"Unknown camera type: {camera_type}")
@@ -90,22 +110,33 @@ class DavisDataset(BaseDataset):
         ), f"{len(frame_names)}, {len(w2cs)}, {len(Ks)}"
         self.w2cs = w2cs[start:end]
         self.Ks = Ks[start:end]
+        tmask = (tstamps >= start) & (tstamps < end)
+        self.tstamps = tstamps[tmask]
+        self.scale = 1
 
         if scene_norm_dict is None:
             cached_scene_norm_dict_path = os.path.join(
                 self.cache_dir, "scene_norm_dict.pth"
             )
             if os.path.exists(cached_scene_norm_dict_path) and self.load_from_cache:
-                print("loading cached scene norm dict...")
+                guru.info("loading cached scene norm dict...")
                 scene_norm_dict = torch.load(
                     os.path.join(self.cache_dir, "scene_norm_dict.pth")
                 )
             else:
                 tracks_3d = self.get_tracks_3d(5000, step=self.num_frames // 10)[0]
-                scene_norm_dict = compute_scene_norm(tracks_3d, self.w2cs)
+                scale, transfm = compute_scene_norm(tracks_3d, self.w2cs)
+                scene_norm_dict = SceneNormDict(scale=scale, transfm=transfm)
                 os.makedirs(self.cache_dir, exist_ok=True)
                 torch.save(scene_norm_dict, cached_scene_norm_dict_path)
-        self.scene_norm_dict = scene_norm_dict
+
+        # transform cameras
+        self.scene_norm_dict = cast(SceneNormDict, scene_norm_dict)
+        self.scale = self.scene_norm_dict["scale"]
+        transform = self.scene_norm_dict["transfm"]
+        guru.info(f"scene norm {self.scale=}, {transform=}")
+        self.w2cs = torch.einsum("nij,jk->nik", self.w2cs, torch.linalg.inv(transform))
+        self.w2cs[:, :3, 3] /= self.scale
 
     @property
     def num_frames(self) -> int:
@@ -120,37 +151,55 @@ class DavisDataset(BaseDataset):
     def get_Ks(self) -> torch.Tensor:
         return self.Ks
 
-    def get_image(self, index):
+    def get_img_wh(self) -> tuple[int, int]:
+        return self.get_image(0).shape[1::-1]
+
+    def get_image(self, index) -> torch.Tensor:
         if self.imgs[index] is None:
             self.imgs[index] = self.load_image(index)
-        return self.imgs[index]
+        img = cast(torch.Tensor, self.imgs[index])
+        return img
 
-    def get_mask(self, index):
+    def get_mask(self, index) -> torch.Tensor:
         if self.masks[index] is None:
             self.masks[index] = self.load_mask(index)
-        return self.masks[index]
+        mask = cast(torch.Tensor, self.masks[index])
+        return mask
 
-    def get_depth(self, index):
+    def get_depth(self, index) -> torch.Tensor:
         if self.depths[index] is None:
             self.depths[index] = self.load_depth(index)
-        return self.depths[index]
+        return self.depths[index] / self.scale
 
-    def load_image(self, index):
+    def load_image(self, index) -> torch.Tensor:
         path = f"{self.img_dir}/{self.frame_names[index]}.jpg"
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
 
-    def load_mask(self, index):
+    def load_mask(self, index, r: int = 3) -> torch.Tensor:
         path = f"{self.mask_dir}/{self.frame_names[index]}.png"
         mask = imageio.imread(path)
-        mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
-        return torch.from_numpy(mask).float()
+        fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
+        bg_mask = ~fg_mask
+        fg_mask_erode = cv2.erode(
+            fg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        )
+        bg_mask_erode = cv2.erode(
+            bg_mask.astype(np.uint8), np.ones((r, r), np.uint8), iterations=1
+        )
+        out_mask = np.zeros_like(fg_mask, dtype=np.float32)
+        out_mask[bg_mask_erode > 0] = -1
+        out_mask[fg_mask_erode > 0] = 1
+        return torch.from_numpy(out_mask).float()
 
-    def load_depth(self, index):
+    def load_depth(self, index) -> torch.Tensor:
         path = f"{self.depth_dir}/{self.frame_names[index]}.png"
-        depth = imageio.imread(path)
-        if depth.dtype == np.uint16:
-            depth = depth.astype(np.float32) / 256.0
-        return torch.from_numpy(depth).float()
+        disp = imageio.imread(path)
+        if disp.dtype == np.uint16:
+            disp = disp.astype(np.float32) / UINT16_MAX
+        depth = 1.0 / np.clip(disp, a_min=1e-6, a_max=1e6)
+        depth = torch.from_numpy(depth)
+        depth = median_filter_2d(depth[None, None], 11, 1)[0, 0]
+        return depth
 
     def load_target_tracks(
         self, query_index: int, target_indices: list[int], dim: int = 1
@@ -178,6 +227,7 @@ class DavisDataset(BaseDataset):
         query_idcs = list(range(start, end, step))
         target_idcs = list(range(start, end, step))
         masks = torch.stack([self.get_mask(i) for i in target_idcs], dim=0)
+        fg_masks = (masks == 1).float()
         depths = torch.stack([self.get_depth(i) for i in target_idcs], dim=0)
         inv_Ks = torch.linalg.inv(self.Ks[target_idcs])
         c2ws = torch.linalg.inv(self.w2cs[target_idcs])
@@ -185,6 +235,7 @@ class DavisDataset(BaseDataset):
         num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
         cur_num = 0
         tracks_all_queries = []
+        # server = get_server()
         for q_idx in query_idcs:
             # (N, T, 4)
             tracks_2d = self.load_target_tracks(q_idx, target_idcs)
@@ -196,9 +247,17 @@ class DavisDataset(BaseDataset):
                 tracks_2d = tracks_2d[sel_idcs]
             cur_num += tracks_2d.shape[0]
             img = self.get_image(q_idx)
+            tidx = target_idcs.index(q_idx)
             tracks_tuple = get_tracks_3d_for_query_frame(
-                q_idx, img, tracks_2d, depths, masks, inv_Ks, c2ws
+                tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws
             )
+            # try:
+            #     points, clrs = tracks_tuple[0].cpu().numpy(), tracks_tuple[1].cpu().numpy()
+            #     for t in range(len(target_idcs)):
+            #         server.scene.add_point_cloud("points", points[:, t], clrs, point_size=0.1)
+            #         time.sleep(0.3)
+            # except KeyboardInterrupt:
+            #     import ipdb; ipdb.set_trace()
             tracks_all_queries.append(tracks_tuple)
         tracks_3d, colors, visibles, invisibles, confidences = map(
             partial(torch.cat, dim=0), zip(*tracks_all_queries)
@@ -206,31 +265,69 @@ class DavisDataset(BaseDataset):
         return tracks_3d, visibles, invisibles, confidences, colors
 
     def get_bkgd_points(
-        self, num_samples: int, start: int = 0, end: int = -1, step: int = 1, **kwargs
+        self,
+        num_samples: int,
+        use_kf_tstamps: bool = True,
+        stride: int = 8,
+        down_rate: int = 8,
+        **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        num_frames = self.num_frames
-        if end < 0:
-            end = num_frames + 1 + end
+        start = 0
+        end = self.num_frames
         H, W = self.get_image(0).shape[:2]
         grid = torch.stack(
             torch.meshgrid(
-                torch.arange(W, dtype=torch.float32),
-                torch.arange(H, dtype=torch.float32),
+                torch.arange(0, W, dtype=torch.float32),
+                torch.arange(0, H, dtype=torch.float32),
                 indexing="xy",
             ),
             dim=-1,
         )
-        query_idcs = list(range(start, end, step))
-        num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
-        cur_num = 0
-        bg = []
+
+        if use_kf_tstamps:
+            query_idcs = self.tstamps.tolist()
+        else:
+            num_query_frames = self.num_frames // stride
+            query_endpts = torch.linspace(start, end, num_query_frames + 1)
+            query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
+
+        bg_geometry = []
         for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
             img = self.get_image(query_idx)
             depth = self.get_depth(query_idx)
-            mask = self.get_mask(query_idx)
-            bool_mask = ((1.0 - mask) * (depth > 0)).to(torch.bool)
+            bg_mask = self.get_mask(query_idx) < 0
+            bool_mask = (bg_mask * (depth > 0)).to(torch.bool)
             w2c = self.w2cs[query_idx]
             K = self.Ks[query_idx]
+
+            # get the bounding box of previous points that reproject into frame
+            bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
+            for p3d, _, _ in bg_geometry:
+                # reproject into current frame
+                p2d = torch.einsum(
+                    "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
+                )
+                p2d = p2d[:, :2] / p2d[:, 2:]
+                if len(p2d) < 1:
+                    continue
+                xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()
+                ymin, ymax = p2d[:, 1].min().item(), p2d[:, 1].max().item()
+
+                bmin_x = min(bmin_x, int(xmin))
+                bmin_y = min(bmin_y, int(ymin))
+                bmax_x = max(bmax_x, int(xmax))
+                bmax_y = max(bmax_y, int(ymax))
+
+            # don't include points that are covered by previous points
+            bmin_x = max(0, bmin_x)
+            bmin_y = max(0, bmin_y)
+            bmax_x = min(W, bmax_x)
+            bmax_y = min(H, bmax_y)
+            overlap_mask = torch.ones_like(bool_mask)
+            overlap_mask[bmin_y:bmax_y, bmin_x:bmax_x] = 0
+
+            bool_mask &= overlap_mask
+
             points = (
                 torch.einsum(
                     "ij,pj->pi",
@@ -244,15 +341,24 @@ class DavisDataset(BaseDataset):
             )
             point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
             point_colors = img[bool_mask]
-            num_sel = int(min(num_per_query_frame, num_samples - cur_num, len(points)))
-            if num_sel < len(points):
-                sel_idcs = np.random.choice(len(points), num_sel, replace=False)
-                points = points[sel_idcs]
-                point_normals = point_normals[sel_idcs]
-                point_colors = point_colors[sel_idcs]
-            cur_num += len(points)
-            bg.append((points, point_normals, point_colors))
-        bg_points, bg_normals, bg_colors = map(partial(torch.cat, dim=0), zip(*bg))
+            sel_idcs = np.random.choice(
+                len(points), len(points) // down_rate, replace=False
+            )
+            points = points[sel_idcs]
+            point_normals = point_normals[sel_idcs]
+            point_colors = point_colors[sel_idcs]
+            guru.debug(f"{query_idx=} {points.shape=}")
+            bg_geometry.append((points, point_normals, point_colors))
+
+        bg_points, bg_normals, bg_colors = map(
+            partial(torch.cat, dim=0), zip(*bg_geometry)
+        )
+        if len(bg_points) > num_samples:
+            sel_idcs = np.random.choice(len(bg_points), num_samples, replace=False)
+            bg_points = bg_points[sel_idcs]
+            bg_normals = bg_normals[sel_idcs]
+            bg_colors = bg_colors[sel_idcs]
+
         return bg_points, bg_normals, bg_colors
 
     def __getitem__(self, index: int):
@@ -268,10 +374,14 @@ class DavisDataset(BaseDataset):
             "Ks": self.Ks[index],
             # (H, W, 3).
             "imgs": self.get_image(index),
-            # (H, W).
-            "masks": self.get_mask(index),
             "depths": self.get_depth(index),
         }
+        tri_mask = self.get_mask(index)
+        valid_mask = tri_mask != 0  # not fg or bg
+        mask = tri_mask == 1  # fg mask
+        data["masks"] = mask.float()
+        data["valid_masks"] = valid_mask.float()
+
         # (P, 2)
         query_tracks = self.load_target_tracks(index, [index])[:, 0, :2]
         target_inds = torch.from_numpy(
@@ -304,21 +414,30 @@ class DavisDataset(BaseDataset):
         return data
 
 
-def load_cameras(path: str, H: int, W: int) -> tuple[torch.Tensor, torch.Tensor]:
+def load_cameras(
+    path: str, H: int, W: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    assert os.path.exists(path), f"Camera file {path} does not exist."
     recon = np.load(path, allow_pickle=True).item()
-    print(f"{recon.keys()=}")
+    guru.debug(f"{recon.keys()=}")
     traj_c2w = recon["traj_c2w"]  # (N, 4, 4)
     h, w = recon["img_shape"]
     sy, sx = H / h, W / w
-    print(f"{sy=}, {sx=}")
     traj_w2c = np.linalg.inv(traj_c2w)
     fx, fy, cx, cy = recon["intrinsics"]  # (4,)
     K = np.array([[fx * sx, 0, cx * sx], [0, fy * sy, cy * sy], [0, 0, 1]])  # (3, 3)
     Ks = np.tile(K[None, ...], (len(traj_c2w), 1, 1))  # (N, 3, 3)
-    return torch.from_numpy(traj_w2c).float(), torch.from_numpy(Ks).float()
+    kf_tstamps = recon["tstamps"].astype("int")
+    return (
+        torch.from_numpy(traj_w2c).float(),
+        torch.from_numpy(Ks).float(),
+        torch.from_numpy(kf_tstamps),
+    )
 
 
-def compute_scene_norm(X: torch.Tensor, w2cs: torch.Tensor) -> SceneNormDict:
+def compute_scene_norm(
+    X: torch.Tensor, w2cs: torch.Tensor
+) -> tuple[float, torch.Tensor]:
     """
     :param X: [N*T, 3]
     :param w2cs: [N, 4, 4]
@@ -336,7 +455,7 @@ def compute_scene_norm(X: torch.Tensor, w2cs: torch.Tensor) -> SceneNormDict:
         * original_up.dot(target_up).acos_()
     )
     transfm = rt_to_mat4(R, torch.einsum("ij,j->i", -R, scene_center))
-    return SceneNormDict(scale=scale, transfm=transfm)
+    return scale, transfm
 
 
 if __name__ == "__main__":

@@ -20,10 +20,13 @@ class VisManager(metaclass=Singleton):
     _servers = {}
 
 
-def get_server(port=8890) -> ViserServer:
+def get_server(port: int | None = None) -> ViserServer:
     manager = VisManager()
+    if port is None:
+        avail_ports = list(manager._servers.keys())
+        port = avail_ports[0] if len(avail_ports) > 0 else 8890
     if port not in manager._servers:
-        manager._servers[port] = ViserServer(port=port)
+        manager._servers[port] = ViserServer(port=port, verbose=False)
     return manager._servers[port]
 
 

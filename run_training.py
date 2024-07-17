@@ -1,28 +1,26 @@
-from dataclasses import asdict, dataclass
-from typing import Annotated, Union
-from tqdm import tqdm
-import yaml
-
-import tyro
 import os
 import os.path as osp
-import numpy as np
-from loguru import logger as guru
-import torch
-from torch.utils.data import DataLoader
-from datetime import datetime
 import shutil
-from flow3d.configs import (
-    SceneLRConfig,
-    LossesConfig,
-    OptimizerConfig,
-)
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from typing import Annotated
+
+import numpy as np
+import torch
+import tyro
+import yaml
+from loguru import logger as guru
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
 from flow3d.data import (
-    get_train_val_datasets,
     BaseDataset,
-    iPhoneDataConfig,
     DavisDataConfig,
+    get_train_val_datasets,
+    iPhoneDataConfig,
 )
+from flow3d.data.utils import to_device
 from flow3d.init_utils import (
     init_bg,
     init_fg_from_tracks_3d,
@@ -31,11 +29,10 @@ from flow3d.init_utils import (
     vis_init_params,
 )
 from flow3d.scene_model import SceneModel
+from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.trainer import Trainer
 from flow3d.validator import Validator
-from flow3d.tensor_dataclass import StaticObservations, TrackObservations
 from flow3d.vis.utils import get_server
-from flow3d.data.utils import to_device
 
 torch.set_float32_matmul_precision("high")
 
@@ -56,10 +53,10 @@ set_seed(42)
 @dataclass
 class TrainConfig:
     work_dir: str
-    data: Union[
-        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")],
-        Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")],
-    ]
+    data: (
+        Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")]
+        | Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")]
+    )
     lr: SceneLRConfig
     loss: LossesConfig
     optim: OptimizerConfig
@@ -67,7 +64,8 @@ class TrainConfig:
     num_bg: int = 100_000
     num_motion_bases: int = 10
     num_epochs: int = 500
-    port: int = 8890
+    port: int | None = None
+    vis_debug: bool = True
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 50
@@ -77,7 +75,7 @@ class TrainConfig:
 def main(cfg: TrainConfig):
     backup_code(cfg.work_dir)
     train_dataset, train_video_view, val_img_dataset, val_kpt_dataset = (
-        get_train_val_datasets(cfg.data)
+        get_train_val_datasets(cfg.data, load_val=True)
     )
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
 
@@ -90,7 +88,9 @@ def main(cfg: TrainConfig):
 
     # if checkpoint exists
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
-    initialize_and_checkpoint_model(cfg, train_dataset, device, ckpt_path)
+    initialize_and_checkpoint_model(
+        cfg, train_dataset, device, ckpt_path, port=cfg.port,
+    )
 
     trainer, start_epoch = Trainer.init_from_checkpoint(
         ckpt_path,
@@ -106,6 +106,7 @@ def main(cfg: TrainConfig):
         train_dataset,
         batch_size=cfg.batch_size,
         num_workers=cfg.num_dl_workers,
+        persistent_workers=True,
         collate_fn=BaseDataset.train_collate_fn,
     )
 
@@ -155,19 +156,20 @@ def initialize_and_checkpoint_model(
     train_dataset: BaseDataset,
     device: torch.device,
     ckpt_path: str,
+    port: int,
 ):
     if os.path.exists(ckpt_path):
         guru.info(f"model checkpoint exists at {ckpt_path}")
         return
 
     fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
-        train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases
+        train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases, port, 
     )
     # run initial optimization
     Ks = train_dataset.get_Ks().to(device)
     w2cs = train_dataset.get_w2cs().to(device)
     run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
-    server = get_server(port=8890)
+    server = get_server(port=cfg.port)
     vis_init_params(server, fg_params, motion_bases)
     model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
 
@@ -177,7 +179,11 @@ def initialize_and_checkpoint_model(
 
 
 def init_model_from_tracks(
-    train_dataset, num_fg: int, num_bg: int, num_motion_bases: int
+    train_dataset,
+    num_fg: int,
+    num_bg: int,
+    num_motion_bases: int,
+    port: int,
 ):
     tracks_3d = TrackObservations(*train_dataset.get_tracks_3d(num_fg))
     print(
@@ -196,7 +202,7 @@ def init_model_from_tracks(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-        tracks_3d, num_motion_bases, rot_type, cano_t
+        tracks_3d, num_motion_bases, rot_type, cano_t, port=port
     )
     motion_bases = motion_bases.to(device)
 
@@ -216,9 +222,7 @@ def init_model_from_tracks(
 
 def backup_code(work_dir):
     root_dir = osp.abspath(osp.join(osp.dirname(__file__)))
-    tracked_dirs = [
-        osp.join(root_dir, dirname) for dirname in ["flow3d", "scripts", "tests"]
-    ]
+    tracked_dirs = [osp.join(root_dir, dirname) for dirname in ["flow3d", "scripts"]]
     dst_dir = osp.join(work_dir, "code", datetime.now().strftime("%Y-%m-%d-%H%M%S"))
     for tracked_dir in tracked_dirs:
         if osp.exists(tracked_dir):
