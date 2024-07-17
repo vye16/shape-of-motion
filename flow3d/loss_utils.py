@@ -155,3 +155,23 @@ def compute_accel_loss(transls):
     accel = 2 * transls[:, 1:-1] - transls[:, :-2] - transls[:, 2:]
     loss = accel.norm(dim=-1).mean()
     return loss
+
+def compute_normal_loss(x, y, mask=None, use_angle_loss=False):
+    """
+    :param x: (..., 3)
+    :param y: (..., 3)
+    :param mask: (...) bool
+    """
+    assert x.shape[-1] == y.shape[-1] == 3
+    x = F.normalize(x, p=2, dim=-1)
+    y = F.normalize(y, p=2, dim=-1)
+    dot_product = (x * y).sum(dim=-1)
+    if use_angle_loss:
+        dot_product = torch.clamp(dot_product, -1+1e-6, 1-1e-6)
+        loss = torch.acos(dot_product)
+    else:
+        loss = 1 - dot_product
+    if mask is not None:
+        loss = loss[mask]
+
+    return loss.mean()

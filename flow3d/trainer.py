@@ -17,6 +17,7 @@ from flow3d.loss_utils import (
     compute_se3_smoothness_loss,
     compute_z_acc_loss,
     masked_l1_loss,
+    compute_normal_loss,
 )
 from flow3d.metrics import PCK, mLPIPS, mPSNR, mSSIM
 from flow3d.scene_model import SceneModel
@@ -168,11 +169,6 @@ class Trainer:
             self.viewer.lock.acquire()
 
         loss, stats, num_rays_per_step, num_rays_per_sec = self.compute_losses(batch)
-        if loss.isnan():
-            guru.info(f"Loss is NaN at step {self.global_step}!!")
-            import ipdb
-
-            ipdb.set_trace()
         loss.backward()
 
         for opt in self.optimizers.values():
@@ -217,6 +213,8 @@ class Trainer:
         masks *= valid_masks
         # (B, H, W).
         depths = batch["depths"]
+        # (B, H, W, 3)
+        normals = batch["normals"]
         # [(P, 2), ...].
         query_tracks_2d = batch["query_tracks_2d"]
         # [(N,), ...].
@@ -477,6 +475,24 @@ class Trainer:
         z_accel_loss = compute_z_acc_loss(means_fg_nbs, w2cs)
         loss += self.losses_cfg.w_z_accel * z_accel_loss
 
+        render_normals = rendered_all["normals"]
+        render_normals_from_depth = (
+            rendered_all["normals_from_depth"].reshape(B, H, W, 3)
+            * rendered_all["acc"].detach()
+        )
+        normal_mask = render_normals_from_depth.norm(dim=-1) > 1e-6
+        normal_loss = compute_normal_loss(
+            render_normals, normals
+        ) + compute_normal_loss(
+            render_normals, render_normals_from_depth, mask=normal_mask
+        )
+        loss += normal_loss * self.losses_cfg.w_normal
+        if loss.isnan():
+            guru.info(f"Loss is NaN at step {self.global_step}!!")
+            import ipdb
+
+            ipdb.set_trace()
+
         # Prepare stats for logging.
         stats = {
             "train/loss": loss.item(),
@@ -488,6 +504,7 @@ class Trainer:
             "train/track_2d_loss": track_2d_loss.item(),
             "train/small_accel_loss": small_accel_loss.item(),
             "train/z_acc_loss": z_accel_loss.item(),
+            "train/normal_loss": normal_loss.item(),
             "train/num_gaussians": self.model.num_gaussians,
             "train/num_fg_gaussians": self.model.num_fg_gaussians,
             "train/num_bg_gaussians": self.model.num_bg_gaussians,

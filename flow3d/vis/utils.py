@@ -149,6 +149,21 @@ def apply_depth_colormap(
     return img
 
 
+def apply_normal_colormap(normal: torch.Tensor) -> torch.Tensor:
+    """Converts a normal image to color for easier analysis.
+
+    Args:
+        normal (torch.Tensor): (..., 3) float32 normal.
+
+    Returns:
+        (..., 3) colored normal image with colors in [0, 1].
+    """
+    normal = normal / normal.norm(dim=-1, keepdim=True)
+    normal = torch.clip(normal, -1.0, 1.0)
+    normal = (normal + 1.0) / 2.0
+    return normal
+
+
 def float2uint8(x):
     return (255.0 * x).astype(np.uint8)
 

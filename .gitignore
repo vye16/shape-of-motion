@@ -5,5 +5,6 @@ outputs/
 work_dirs/
 *__pycache__*
 .vscode/
+eval_output/
 .envrc
 .bak/

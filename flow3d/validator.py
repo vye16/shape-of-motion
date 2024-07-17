@@ -23,6 +23,7 @@ from flow3d.scene_model import SceneModel
 from flow3d.vis.utils import (
     apply_depth_colormap,
     make_video_divisble,
+    apply_normal_colormap,
     plot_correspondences,
 )
 
@@ -248,7 +249,24 @@ class Validator:
         video = []
         ref_pred_depths = []
         masks = []
+        normals = []
+        normals_from_depth = []
+
+        virtual = [] # render rgb video from a virtual view
+        virtual_ref_pred_depths = []
+        virtual_normals = []
+        
+        w2cs = self.train_loader.dataset.dataset.w2cs
+        c2ws = torch.linalg.inv(w2cs)
+        cam_centers = c2ws[:, :3, 3]
+        interval = min(25, len(cam_centers) // 2)
+        virtual_offset = (cam_centers[interval:] - cam_centers[:-interval]).abs().mean(0)
+        c2ws_virtual = c2ws.clone()
+        c2ws_virtual[:, :3, 3] -= virtual_offset[None]
+        w2cs_virtual = torch.linalg.inv(c2ws_virtual).to(self.device)
+
         depth_min, depth_max = 1e6, 0
+        virtual_depth_min, virtual_depth_max = 1e6, 0
         for batch_idx, batch in enumerate(
             tqdm(self.train_loader, desc="Rendering video", leave=False)
         ):
@@ -282,6 +300,19 @@ class Validator:
             depth_max = max(depth_max, ref_pred_depth.quantile(0.99).item())
             if rendered["mask"] is not None:
                 masks.append(rendered["mask"][0].cpu().squeeze(-1))
+            normals.append(rendered["normals"][0].cpu())
+            normals_from_depth.append(rendered["normals_from_depth"].cpu())
+
+            rendered_virtual = self.model.render(
+                t, w2cs_virtual[batch_idx][None], K[None], img_wh, return_depth=True, return_mask=True)
+            virtual.append(rendered_virtual["img"][0].cpu())
+            virtual_ref_pred_depth = torch.cat(
+                (depth[..., None], rendered_virtual["depth"][0]), dim=1
+            ).cpu()
+            virtual_ref_pred_depths.append(virtual_ref_pred_depth)
+            virtual_depth_min = min(virtual_depth_min, virtual_ref_pred_depth.min().item())
+            virtual_depth_max = max(virtual_depth_max, virtual_ref_pred_depth.quantile(0.99).item())
+            virtual_normals.append(rendered_virtual["normals"][0].cpu())
 
         # rgb video
         video = torch.stack(video, dim=0)
@@ -300,6 +331,12 @@ class Validator:
             ],
             dim=0,
         )
+        normal_video = torch.stack(
+            [apply_normal_colormap(normal) for normal in normals], dim=0
+        )
+        normal_from_depth_video = torch.stack(
+            [apply_normal_colormap(normal) for normal in normals_from_depth], dim=0
+        )
         iio.mimwrite(
             osp.join(video_dir, "depths.mp4"),
             make_video_divisble((depth_video.numpy() * 255).astype(np.uint8)),
@@ -313,6 +350,47 @@ class Validator:
                 make_video_divisble((mask_video.numpy() * 255).astype(np.uint8)),
                 fps=fps,
             )
+        iio.mimwrite(
+            osp.join(video_dir, "normals.mp4"),
+            make_video_divisble((normal_video.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
+        iio.mimwrite(
+            osp.join(video_dir, "normals_from_depth.mp4"),
+            make_video_divisble((normal_from_depth_video.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
+
+        # virtual view video
+        virtual = torch.stack(virtual, dim=0)
+        iio.mimwrite(
+            osp.join(video_dir, "virtual_view.mp4"),
+            make_video_divisble((virtual.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
+        # depth video
+        virtual_depth_video = torch.stack(
+            [
+                apply_depth_colormap(
+                    virtual_ref_pred_depth, near_plane=virtual_depth_min, far_plane=virtual_depth_max
+                )
+                for virtual_ref_pred_depth in virtual_ref_pred_depths
+            ],
+            dim=0,
+        )
+        iio.mimwrite(
+            osp.join(video_dir, "virtual_depths.mp4"),
+            make_video_divisble((virtual_depth_video.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
+        virtual_normal_video = torch.stack(
+            [apply_normal_colormap(virtual_normal) for virtual_normal in virtual_normals], dim=0
+        )
+        iio.mimwrite(
+            osp.join(video_dir, "virtual_normals.mp4"),
+            make_video_divisble((virtual_normal_video.numpy() * 255).astype(np.uint8)),
+            fps=fps,
+        )
 
         # Render 2D track video.
         tracks_2d, target_imgs = [], []

@@ -38,13 +38,14 @@ class LossesConfig:
     w_rgb: float = 1.0
     w_depth_reg: float = 0.5
     w_depth_const: float = 0.1
-    w_depth_grad: float = 1
+    w_depth_grad: float = 0
     w_track: float = 2.0
     w_mask: float = 1.0
     w_smooth_bases: float = 0.1
-    w_smooth_tracks: float = 0.0
-    w_scale_var: float = 0.01
+    w_smooth_tracks: float = 1.0
+    w_scale_var: float = 0
     w_z_accel: float = 1.0
+    w_normal: float = 0.1
 
 
 @dataclass

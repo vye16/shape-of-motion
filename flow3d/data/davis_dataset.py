@@ -84,6 +84,7 @@ class DavisDataset(BaseDataset):
         self.mask_dir = f"{root_dir}/Annotations/{res}/{seq_name}"
         self.tracks_dir = f"{root_dir}/2d_tracks/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
+        self.normal_dir = f"{root_dir}/normals/{res}/{seq_name}"
         frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
 
         if end == -1:
@@ -95,6 +96,7 @@ class DavisDataset(BaseDataset):
         self.imgs: list[torch.Tensor | None] = [None for _ in self.frame_names]
         self.depths: list[torch.Tensor | None] = [None for _ in self.frame_names]
         self.masks: list[torch.Tensor | None] = [None for _ in self.frame_names]
+        self.normals: list[torch.Tensor | None] = [None for _ in self.frame_names]
 
         # load cameras
         if camera_type == "droid_recon":
@@ -171,6 +173,11 @@ class DavisDataset(BaseDataset):
             self.depths[index] = self.load_depth(index)
         return self.depths[index] / self.scale
 
+    def get_normal(self, index) -> torch.Tensor:
+        if self.normals[index] is None:
+            self.normals[index] = self.load_normal(index)
+        return self.normals[index]
+
     def load_image(self, index) -> torch.Tensor:
         path = f"{self.img_dir}/{self.frame_names[index]}.jpg"
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
@@ -200,6 +207,18 @@ class DavisDataset(BaseDataset):
         depth = torch.from_numpy(depth)
         depth = median_filter_2d(depth[None, None], 11, 1)[0, 0]
         return depth
+
+    def load_normal(self, index) -> torch.Tensor:
+        normal = imageio.imread(
+            os.path.join(
+                self.normal_dir,
+                f"{self.frame_names[index]}.png",
+            )
+        )
+        normal = normal / 255.0 * 2.0 - 1.0
+        normal = normal[..., [0, 2, 1]]
+        normal[..., :2] *= -1
+        return normal
 
     def load_target_tracks(
         self, query_index: int, target_indices: list[int], dim: int = 1
@@ -375,6 +394,7 @@ class DavisDataset(BaseDataset):
             # (H, W, 3).
             "imgs": self.get_image(index),
             "depths": self.get_depth(index),
+            "normals": self.get_normal(index),
         }
         tri_mask = self.get_mask(index)
         valid_mask = tri_mask != 0  # not fg or bg

@@ -207,6 +207,18 @@ class iPhoneDataset(BaseDataset):
                         depth[depth < 1e-3] = 1e-3
                         depth = 1.0 / depth
                     return depth
+                def load_normal(frame_name):
+                    normal = iio.imread(
+                        osp.join(
+                            self.data_dir,
+                            f"flow3d_preprocessed/normal/",
+                            f"{factor}x/{frame_name}.png",
+                        )
+                    )
+                    normal = normal / 255.0 * 2.0 - 1.0
+                    normal = normal[..., [0, 2, 1]]
+                    normal[..., :2] *= -1
+                    return normal
 
                 self.depths = torch.from_numpy(
                     np.array(
@@ -215,6 +227,19 @@ class iPhoneDataset(BaseDataset):
                             for frame_name in tqdm(
                                 self.frame_names,
                                 desc=f"Loading {self.split} depths",
+                                leave=False,
+                            )
+                        ],
+                        np.float32,
+                    )
+                )
+                self.normals = torch.from_numpy(
+                    np.array(
+                        [
+                            load_normal(frame_name)
+                            for frame_name in tqdm(
+                                self.frame_names,
+                                desc=f"Loading {self.split} normals",
                                 leave=False,
                             )
                         ],
@@ -624,6 +649,7 @@ class iPhoneDataset(BaseDataset):
         if self.training:
             # (H, W).
             data["depths"] = self.depths[index]
+            data["normals"] = self.normals[index]
             # (P, 2).
             data["query_tracks_2d"] = self.query_tracks_2d[index][:, :2]
             target_inds = torch.from_numpy(

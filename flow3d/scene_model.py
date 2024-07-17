@@ -2,7 +2,7 @@ import roma
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from gsplat.rendering import rasterization
+from gsplat.rendering import rasterization, rasterization_2dgs
 from torch import Tensor
 
 from flow3d.params import GaussianParams, MotionBases
@@ -228,7 +228,7 @@ class SceneModel(nn.Module):
             mode = "RGB+ED"
             ds_expected["depth"] = 1
 
-        (render_colors, alphas, _, _), info = rasterization_2dgs(
+        results_2dgs, info = rasterization_2dgs(
             means=means,
             quats=quats,
             scales=scales,
@@ -241,7 +241,9 @@ class SceneModel(nn.Module):
             height=H,
             packed=False,
             render_mode=mode,
+            distloss=True if return_depth else False,
         )
+        render_colors, alphas, render_normals, render_normals_from_depth = results_2dgs
 
         # Populate the current data for adaptive gaussian control.
         if self.training and info["means2d"].requires_grad:
@@ -262,4 +264,6 @@ class SceneModel(nn.Module):
                 x = x.reshape(C, H, W, B, 3)
             out_dict[name] = x
         out_dict["acc"] = alphas
+        out_dict["normals"] = render_normals
+        out_dict["normals_from_depth"] = render_normals_from_depth
         return out_dict
