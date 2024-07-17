@@ -33,21 +33,6 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-
-def gen_grid_np(h, w, normalize=False, homogeneous=False):
-    if normalize:
-        lin_y = np.linspace(-1.0, 1.0, num=h)
-        lin_x = np.linspace(-1.0, 1.0, num=w)
-    else:
-        lin_y = np.arange(0, h)
-        lin_x = np.arange(0, w)
-    grid_x, grid_y = np.meshgrid(lin_x, lin_y)
-    grid = np.stack((grid_x, grid_y), -1)
-    if homogeneous:
-        grid = np.concatenate([grid, np.ones_like(grid[..., :1])], axis=-1)
-    return grid  # [h, w, 2 or 3]
-
-
 ## Load model
 ckpt_file = (
     "tapir_checkpoint_panning.npy"
@@ -59,12 +44,24 @@ ckpt_path = os.path.join(args.ckpt_dir, ckpt_file)
 ckpt_state = np.load(ckpt_path, allow_pickle=True).item()
 params, state = ckpt_state["params"], ckpt_state["state"]
 
+def init_model(model_type):
+    if model_type == "bootstapir":
+        model = tapir_model.TAPIR(
+            bilinear_interp_with_depthwise_conv=False,
+            pyramid_level=1,
+            extra_convs=True,
+            softmax_temperature=10.0,
+        )
+    else:
+        model = tapir_model.TAPIR(
+            bilinear_interp_with_depthwise_conv=False, pyramid_level=0
+        )
+    return model
+
 
 def build_model(frames, query_points):
     """Compute point tracks and occlusions given frames and query points."""
-    model = tapir_model.TAPIR(
-        bilinear_interp_with_depthwise_conv=False, pyramid_level=0
-    )
+    model = init_model(args.model_type)
     outputs = model(
         video=frames,
         is_training=False,
@@ -92,67 +89,15 @@ def preprocess_frames(frames):
     return frames
 
 
-def postprocess_occlusions(occlusions, expected_dist):
-    """Postprocess occlusions to boolean visible flag.
-
-    Args:
-      occlusions: [num_points, num_frames], [-inf, inf], np.float32
-      expected_dist: [num_points, num_frames], [-inf, inf], np.float32
-
-    Returns:
-      visibles: [num_points, num_frames], bool
-    """
-    visibles = (1 - jax.nn.sigmoid(occlusions)) * (
-        1 - jax.nn.sigmoid(expected_dist)
-    ) > 0.5
-    return visibles
-
-
-def inference(frames, query_points):
-    """Inference on one video.
-
-    Args:
-      frames: [num_frames, height, width, 3], [0, 255], np.uint8
-      query_points: [num_points, 3], [0, num_frames/height/width], [t, y, x]
-
-    Returns:
-      tracks: [num_points, 3], [-1, 1], [t, y, x]
-      visibles: [num_points, num_frames], bool
-    """
-    # Preprocess video to match model inputs format
-    frames = preprocess_frames(frames)
-    num_frames, height, width = frames.shape[0:3]
-    query_points = query_points.astype(np.float32)
-    frames, query_points = frames[None], query_points[None]  # Add batch dimension
-
-    # Model inference
-    rng = jax.random.PRNGKey(42)
-    outputs, _ = model_apply(params, state, rng, frames, query_points)
-    outputs = tree.map_structure(lambda x: np.array(x[0]), outputs)
-    tracks, occlusions, expected_dist = (
-        outputs["tracks"],
-        outputs["occlusion"],
-        outputs["expected_dist"],
-    )
-
-    # Binarize occlusions
-    visibles = postprocess_occlusions(occlusions, expected_dist)
-    return tracks, visibles
-
-
 def build_model_init(frames):
-    model = tapir_model.TAPIR(
-        bilinear_interp_with_depthwise_conv=False, pyramid_level=0
-    )
+    model = init_model(args.model_type)
     feature_grids = model.get_feature_grids(frames, is_training=False)
     return feature_grids
 
 
 def build_model_predict(frames, points, feature_grids):
     """Compute point tracks and occlusions given frames and query points."""
-    model = tapir_model.TAPIR(
-        bilinear_interp_with_depthwise_conv=False, pyramid_level=0
-    )
+    model = init_model(args.model_type)
     features = model.get_query_features(
         frames,
         is_training=False,
@@ -265,9 +210,6 @@ prediction, _ = model_predict_apply(
     points=query_points,
     feature_grids=feature_grids,
 )
-
-# todo convert it to flow!
-# grid = gen_grid_np(height, width)
 
 for t in tqdm(range(num_frames), desc="frames"):
     all_points = np.stack([t * np.ones_like(y), y_resize, x_resize], axis=-1)
