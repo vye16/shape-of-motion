@@ -44,6 +44,7 @@ ckpt_path = os.path.join(args.ckpt_dir, ckpt_file)
 ckpt_state = np.load(ckpt_path, allow_pickle=True).item()
 params, state = ckpt_state["params"], ckpt_state["state"]
 
+
 def init_model(model_type):
     if model_type == "bootstapir":
         model = tapir_model.TAPIR(
