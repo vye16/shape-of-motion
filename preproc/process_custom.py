@@ -6,22 +6,23 @@ import tyro
 
 def main(
     image_dirs: list[str],
-    device_ids: list[int],
+    gpus: list[int],
     image_name: str = "images",
     mask_name: str = "masks",
     metric_depth_name: str = "unidepth_disp",
     intrins_name: str = "unidepth_intrins",
     mono_depth_model: str = "depth-anything",
     slam_name: str = "droid_recon",
-    track_name: str = "2d_tracks",
+    track_model: str = "bootstapir",
 ):
     mono_depth_name = mono_depth_model.replace("-", "_")
-    with ProcessPoolExecutor(max_workers=len(device_ids)) as exc:
-        for dev_id, img_dir in zip(device_ids, image_dirs):
+    with ProcessPoolExecutor(max_workers=len(gpus)) as exc:
+        for i, img_dir in enumerate(image_dirs):
+            gpu = gpus[i % len(gpus)]
             img_dir = img_dir.rstrip("/")
             exc.submit(
                 process_sequence,
-                dev_id,
+                gpu,
                 img_dir,
                 img_dir.replace(image_name, mask_name),
                 img_dir.replace(image_name, metric_depth_name),
@@ -29,13 +30,14 @@ def main(
                 img_dir.replace(image_name, mono_depth_name),
                 img_dir.replace(image_name, f"aligned_{mono_depth_name}"),
                 img_dir.replace(image_name, slam_name),
-                img_dir.replace(image_name, track_name),
+                img_dir.replace(image_name, track_model),
                 mono_depth_model,
+                track_model,
             )
 
 
 def process_sequence(
-    dev_id: int,
+    gpu: int,
     img_dir: str,
     mask_dir: str,
     metric_depth_dir: str,
@@ -45,8 +47,9 @@ def process_sequence(
     slam_path: str,
     track_dir: str,
     depth_model: str = "depth-anything",
+    track_model: str = "bootstapir",
 ):
-    dev_arg = f"CUDA_VISIBLE_DEVICES={dev_id}"
+    dev_arg = f"CUDA_VISIBLE_DEVICES={gpu}"
     # XXX activate environments
     source_pre = "source /home/vye/anaconda3/bin/activate"
     # source_pre = "conda activate"
@@ -82,7 +85,7 @@ def process_sequence(
 
     track_cmd = (
         f"{dev_arg} python compute_tracks_pairwise.py --image_dir {img_dir} "
-        f"--mask_dir {mask_dir} --out_dir {track_dir}"
+        f"--mask_dir {mask_dir} --out_dir {track_dir} --model_type {track_model}"
     )
     cmd = f"{source_pre} {track_env}; {track_cmd}"
     print(cmd)
