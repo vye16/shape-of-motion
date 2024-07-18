@@ -3,7 +3,7 @@ from dataclasses import asdict, replace
 from torch.utils.data import Dataset
 
 from .base_dataset import BaseDataset
-from .davis_dataset import CustomDataConfig, DavisDataConfig, DavisDataset
+from .casual_dataset import CustomDataConfig, DavisDataConfig, CasualDataset
 from .iphone_dataset import (
     iPhoneDataConfig,
     iPhoneDataset,
@@ -33,7 +33,7 @@ def get_train_val_datasets(
     elif isinstance(data_cfg, DavisDataConfig) or isinstance(
         data_cfg, CustomDataConfig
     ):
-        train_dataset = DavisDataset(**asdict(data_cfg))
+        train_dataset = CasualDataset(**asdict(data_cfg))
     else:
         raise ValueError(f"Unknown data config: {data_cfg}")
     return train_dataset, train_video_view, val_img_dataset, val_kpt_dataset

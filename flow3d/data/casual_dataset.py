@@ -1,5 +1,4 @@
 import os
-import time
 from dataclasses import dataclass
 from functools import partial
 from typing import Literal, cast
@@ -25,7 +24,6 @@ from flow3d.data.utils import (
     parse_tapir_track_info,
 )
 from flow3d.transforms import rt_to_mat4
-from flow3d.vis.utils import get_server
 
 
 @dataclass
@@ -74,12 +72,9 @@ class CustomDataConfig:
     scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     num_targets_per_frame: int = 4
     load_from_cache: bool = False
-    img_subdir: str = "JPEGImages"
-    mask_subdir: str = "Annotations"
-    img_ext: str = "jpg"
 
 
-class DavisDataset(BaseDataset):
+class CasualDataset(BaseDataset):
     def __init__(
         self,
         seq_name: str,
@@ -102,9 +97,6 @@ class DavisDataset(BaseDataset):
         scene_norm_dict: SceneNormDict | None = None,
         num_targets_per_frame: int = 4,
         load_from_cache: bool = False,
-        img_subdir: str = "JPEGImages",
-        mask_subdir: str = "Annotations",
-        img_ext: str = "jpg",
         **_,
     ):
         super().__init__()
@@ -213,7 +205,7 @@ class DavisDataset(BaseDataset):
         return self.depths[index] / self.scale
 
     def load_image(self, index) -> torch.Tensor:
-        path = f"{self.img_dir}/{self.frame_names[index]}.{self.img_ext}"
+        path = f"{self.img_dir}/{self.frame_names[index]}{self.img_ext}"
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
 
     def load_mask(self, index) -> torch.Tensor:
@@ -277,7 +269,6 @@ class DavisDataset(BaseDataset):
         num_per_query_frame = int(np.ceil(num_samples / len(query_idcs)))
         cur_num = 0
         tracks_all_queries = []
-        # server = get_server()
         for q_idx in query_idcs:
             # (N, T, 4)
             tracks_2d = self.load_target_tracks(q_idx, target_idcs)
@@ -293,13 +284,6 @@ class DavisDataset(BaseDataset):
             tracks_tuple = get_tracks_3d_for_query_frame(
                 tidx, img, tracks_2d, depths, fg_masks, inv_Ks, c2ws
             )
-            # try:
-            #     points, clrs = tracks_tuple[0].cpu().numpy(), tracks_tuple[1].cpu().numpy()
-            #     for t in range(len(target_idcs)):
-            #         server.scene.add_point_cloud("points", points[:, t], clrs, point_size=0.1)
-            #         time.sleep(0.3)
-            # except KeyboardInterrupt:
-            #     import ipdb; ipdb.set_trace()
             tracks_all_queries.append(tracks_tuple)
         tracks_3d, colors, visibles, invisibles, confidences = map(
             partial(torch.cat, dim=0), zip(*tracks_all_queries)
@@ -312,6 +296,7 @@ class DavisDataset(BaseDataset):
         use_kf_tstamps: bool = True,
         stride: int = 8,
         down_rate: int = 8,
+        min_per_frame: int = 64,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         start = 0
@@ -334,6 +319,7 @@ class DavisDataset(BaseDataset):
             query_idcs = ((query_endpts[:-1] + query_endpts[1:]) / 2).long().tolist()
 
         bg_geometry = []
+        print(f"{query_idcs=}")
         for query_idx in tqdm(query_idcs, desc="Loading bkgd points", leave=False):
             img = self.get_image(query_idx)
             depth = self.get_depth(query_idx)
@@ -343,15 +329,16 @@ class DavisDataset(BaseDataset):
             K = self.Ks[query_idx]
 
             # get the bounding box of previous points that reproject into frame
+            # inefficient but works for now
             bmax_x, bmax_y, bmin_x, bmin_y = 0, 0, W, H
             for p3d, _, _ in bg_geometry:
+                if len(p3d) < 1:
+                    continue
                 # reproject into current frame
                 p2d = torch.einsum(
                     "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
                 )
                 p2d = p2d[:, :2] / p2d[:, 2:].clamp(min=1e-6)
-                if len(p2d) < 1:
-                    continue
                 xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()
                 ymin, ymax = p2d[:, 1].min().item(), p2d[:, 1].max().item()
 
@@ -369,6 +356,9 @@ class DavisDataset(BaseDataset):
             overlap_mask[bmin_y:bmax_y, bmin_x:bmax_x] = 0
 
             bool_mask &= overlap_mask
+            if bool_mask.sum() < min_per_frame:
+                guru.debug(f"skipping {query_idx=}")
+                continue
 
             points = (
                 torch.einsum(
@@ -383,9 +373,9 @@ class DavisDataset(BaseDataset):
             )
             point_normals = normal_from_depth_image(depth, K, w2c)[bool_mask]
             point_colors = img[bool_mask]
-            sel_idcs = np.random.choice(
-                len(points), len(points) // down_rate, replace=False
-            )
+
+            num_sel = max(len(points) // down_rate, min_per_frame)
+            sel_idcs = np.random.choice(len(points), num_sel, replace=False)
             points = points[sel_idcs]
             point_normals = point_normals[sel_idcs]
             point_colors = point_colors[sel_idcs]
@@ -501,4 +491,4 @@ def compute_scene_norm(
 
 
 if __name__ == "__main__":
-    d = DavisDataset("bear", "/shared/vye/datasets/DAVIS", camera_type="droid_recon")
+    d = CasualDataset("bear", "/shared/vye/datasets/DAVIS", camera_type="droid_recon")
