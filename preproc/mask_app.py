@@ -169,9 +169,9 @@ class PromptGUI(object):
             self.tracker, images, idx_mask, self.frame_index
         )
 
-        self.color_masks_all = colorize_masks(images, self.index_masks_all)
+        out_frames, self.color_masks_all = colorize_masks(images, self.index_masks_all)
         out_vidpath = "tracked_colors.mp4"
-        iio.mimwrite(out_vidpath, self.color_masks_all)
+        iio.mimwrite(out_vidpath, out_frames)
         message = f"Wrote current tracked video to {out_vidpath}."
         instruct = "Save the masks to an output directory if it looks good!"
         return out_vidpath, f"{message} {instruct}"
@@ -223,16 +223,18 @@ def colorize_masks(images, index_masks, fac: float = 0.5):
     max_idx = max([m.max() for m in index_masks])
     guru.debug(f"{max_idx=}")
     palette = get_hls_palette(max_idx + 1)
+    color_masks = []
     out_frames = []
     for img, mask in zip(images, index_masks):
-        out_u = compose_and_colorize_mask(img, mask, palette, fac)
+        clr_mask = palette[mask.astype("int")]
+        color_masks.append(clr_mask)
+        out_u = compose_img_mask(img, clr_mask, fac)
         out_frames.append(out_u)
-    return out_frames
+    return out_frames, color_masks
 
 
-def compose_and_colorize_mask(img, mask, palette, fac: float = 0.5):
-    color_masks = palette[mask.astype("int")]
-    out_f = fac * img / 255 + (1 - fac) * color_masks / 255
+def compose_img_mask(img, color_mask, fac: float = 0.5):
+    out_f = fac * img / 255 + (1 - fac) * color_mask / 255
     out_u = (255 * out_f).astype("uint8")
     return out_u
 
@@ -255,7 +257,8 @@ def make_demo(
     prompts = PromptGUI(checkpoint_dir, sam_model_type, device)
 
     start_instructions = (
-        "Enter path to the image directory, or extract frames from a selected video"
+        "Select a video file to extract frames from, "
+        "or select an image directory with frames already extracted."
     )
     vid_root, img_root = (f"{root_dir}/{vid_name}", f"{root_dir}/{img_name}")
     with gr.Blocks() as demo:
@@ -392,7 +395,8 @@ def make_demo(
             index_mask = prompts.add_point(img, i, j)
             guru.debug(f"{index_mask.shape=}")
             palette = get_hls_palette(index_mask.max() + 1)
-            out_u = compose_and_colorize_mask(img, index_mask, palette)
+            color_mask = palette[index_mask]
+            out_u = compose_img_mask(img, color_mask)
             out = draw_points(out_u, prompts.selected_points, prompts.selected_labels)
             return out
 
