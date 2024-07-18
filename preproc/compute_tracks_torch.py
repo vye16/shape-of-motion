@@ -1,16 +1,15 @@
 import argparse
 import glob
 import os
+
 import imageio
 import mediapy as media
 import numpy as np
-from tqdm import tqdm
-
 import torch
 import torch.nn.functional as F
-
 from tapnet.torch import tapir_model
 from tapnet.utils import transforms
+from tqdm import tqdm
 
 
 def read_video(folder_path):
