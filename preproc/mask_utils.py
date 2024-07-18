@@ -35,7 +35,8 @@ def track_masks(
 ):
     """
     :param imgs_np: (T, H, W, 3)
-    :param masks: (H, W)
+    :param cano_mask: (H, W) index mask
+    :param cano_t: canonical frame index
     """
     T = len(imgs_np)
     cano_mask = cano_mask > 0.5
