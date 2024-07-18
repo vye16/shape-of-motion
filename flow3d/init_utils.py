@@ -112,7 +112,7 @@ def init_motion_params_with_procrustes(
     cluster_init_method: str = "kmeans",
     min_mean_weight: float = 0.1,
     vis: bool = False,
-    port: int = 8890,
+    port: int | None = None,
 ) -> tuple[MotionBases, torch.Tensor, TrackObservations]:
     device = tracks_3d.xyz.device
     num_frames = tracks_3d.xyz.shape[1]
@@ -132,7 +132,7 @@ def init_motion_params_with_procrustes(
 
     tracks_3d = tracks_3d.filter_valid(valid_mask)
 
-    if vis:
+    if vis and port is not None:
         server = get_server(port)
         try:
             pts = tracks_3d.xyz.cpu().numpy()
@@ -177,6 +177,7 @@ def init_motion_params_with_procrustes(
 
     tgt_ts = list(range(cano_t - 1, -1, -1)) + list(range(cano_t, num_frames))
     print(f"{tgt_ts=}")
+    skipped_ts = {}
     for n, cluster_id in enumerate(ids):
         mask_in_cluster = labels == cluster_id
         cluster = tracks_3d.xyz[mask_in_cluster].transpose(
@@ -190,6 +191,7 @@ def init_motion_params_with_procrustes(
         )  # [num_frames, n_pts]
         weights = get_weights_for_procrustes(cluster, visibilities)
         prev_t = cano_t
+        cluster_skip_ts = []
         for cur_t in tgt_ts:
             # compute pairwise transform from cano_t
             procrustes_weights = (
@@ -201,7 +203,7 @@ def init_motion_params_with_procrustes(
             if procrustes_weights.sum() < min_mean_weight * num_frames:
                 init_rots[n, cur_t] = init_rots[n, prev_t]
                 init_ts[n, cur_t] = init_ts[n, prev_t]
-                print(f"skipping {cur_t=} {procrustes_weights.sum()=}")
+                cluster_skip_ts.append(cur_t)
             else:
                 se3, (err, err_before) = solve_procrustes(
                     cluster[cano_t],
@@ -228,7 +230,9 @@ def init_motion_params_with_procrustes(
                 errs_after[n, cur_t] = err
                 errs_before[n, cur_t] = err_before
             prev_t = cur_t
+        skipped_ts[cluster_id.item()] = cluster_skip_ts
 
+    guru.info(f"{skipped_ts=}")
     guru.info(
         "procrustes init median error: {:.5f} => {:.5f}".format(
             np.median(errs_before[errs_before > 0]),
