@@ -6,9 +6,9 @@ import imageio
 import mediapy as media
 import numpy as np
 import torch
-import torch.nn.functional as F
-from tapnet.torch import tapir_model
-from tapnet.utils import transforms
+
+from tapnet_torch import tapir_model
+from tapnet_torch import transforms
 from tqdm import tqdm
 
 
@@ -77,9 +77,9 @@ def main():
 
     ## Load model
     ckpt_file = (
-        "tapir_checkpoint_panning.npy"
+        "tapir_checkpoint_panning.pt"
         if args.model_type == "tapir"
-        else "bootstapir_checkpoint_v2.npy"
+        else "bootstapir_checkpoint_v2.pt"
     )
     ckpt_path = os.path.join(args.ckpt_dir, ckpt_file)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -125,11 +125,12 @@ def main():
             points = torch.from_numpy(points.astype(np.float32))[None].to(
                 device
             )  # Add batch dimension
-            outputs = model(frames, points)
+            with torch.inference_mode():
+                preds = model(frames, points)
             tracks, occlusions, expected_dist = (
-                outputs["tracks"][0].detach().cpu().numpy(),
-                outputs["occlusion"][0].detach().cpu().numpy(),
-                outputs["expected_dist"][0].detach().cpu().numpy(),
+                preds["tracks"][0].detach().cpu().numpy(),
+                preds["occlusion"][0].detach().cpu().numpy(),
+                preds["expected_dist"][0].detach().cpu().numpy(),
             )
             tracks = transforms.convert_grid_coordinates(
                 tracks, (resize_width - 1, resize_height - 1), (width - 1, height - 1)
