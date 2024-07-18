@@ -3,13 +3,12 @@ from typing import cast
 
 import cv2
 import numpy as np
-import nvdiffrast.torch as dr
+
+# import nvdiffrast.torch as dr
 import torch
 import torch.nn.functional as F
 from matplotlib import colormaps
 from viser import ViserServer
-
-CTX = dr.RasterizeCudaContext()
 
 
 class Singleton(type):
@@ -241,6 +240,7 @@ def draw_tracks_2d_th(
     cmap_name: str = "gist_rainbow",
 ):
     cmap = colormaps.get_cmap(cmap_name)
+    CTX = dr.RasterizeCudaContext()
 
     W, H = img.shape[1], img.shape[0]
     if W % 8 != 0 or H % 8 != 0:

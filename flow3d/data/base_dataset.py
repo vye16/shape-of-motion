@@ -9,6 +9,10 @@ class BaseDataset(Dataset):
     @abstractmethod
     def num_frames(self) -> int: ...
 
+    @property
+    def keyframe_idcs(self) -> torch.Tensor:
+        return torch.arange(self.num_frames)
+
     @abstractmethod
     def get_w2cs(self) -> torch.Tensor: ...
 
@@ -29,14 +33,28 @@ class BaseDataset(Dataset):
     @abstractmethod
     def get_tracks_3d(
         self, num_samples: int, **kwargs
-    ) -> tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
-    ]: ...
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Returns 3D tracks:
+            coordinates (N, T, 3),
+            visibles (N, T),
+            invisibles (N, T),
+            confidences (N, T),
+            colors (N, 3)
+        """
+        ...
 
     @abstractmethod
     def get_bkgd_points(
         self, num_samples: int, **kwargs
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]: ...
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Returns background points:
+            coordinates (N, 3),
+            normals (N, 3),
+            colors (N, 3)
+        """
+        ...
 
     @staticmethod
     def train_collate_fn(batch):

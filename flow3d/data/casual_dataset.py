@@ -144,7 +144,7 @@ class CasualDataset(BaseDataset):
         self.w2cs = w2cs[start:end]
         self.Ks = Ks[start:end]
         tmask = (tstamps >= start) & (tstamps < end)
-        self.tstamps = tstamps[tmask] - start
+        self._keyframe_idcs = tstamps[tmask] - start
         self.scale = 1
 
         if scene_norm_dict is None:
@@ -174,6 +174,10 @@ class CasualDataset(BaseDataset):
     @property
     def num_frames(self) -> int:
         return len(self.frame_names)
+
+    @property
+    def keyframe_idcs(self) -> torch.Tensor:
+        return self._keyframe_idcs
 
     def __len__(self):
         return len(self.frame_names)
@@ -240,8 +244,8 @@ class CasualDataset(BaseDataset):
     ):
         """
         tracks are 2d, occs and uncertainties
-        :param dim (int): dimension to stack the time axis
-        return (T, N, 4) if dim=0, (N, T, 4) if dim=1
+        :param dim (int), default 1: dimension to stack the time axis
+        return (N, T, 4) if dim=1, (T, N, 4) if dim=0
         """
         q_name = self.frame_names[query_index]
         all_tracks = []
@@ -312,7 +316,7 @@ class CasualDataset(BaseDataset):
         )
 
         if use_kf_tstamps:
-            query_idcs = self.tstamps.tolist()
+            query_idcs = self.keyframe_idcs.tolist()
         else:
             num_query_frames = self.num_frames // stride
             query_endpts = torch.linspace(start, end, num_query_frames + 1)

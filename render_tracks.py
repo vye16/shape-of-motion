@@ -17,7 +17,6 @@ from flow3d.trajectories import get_avg_w2c, get_lookat
 from flow3d.vis.utils import (
     draw_keypoints_cv2,
     draw_tracks_2d,
-    draw_tracks_2d_th,
     get_server,
     make_video_divisble,
 )
@@ -45,34 +44,51 @@ def main(cfg: VideoConfig):
 
     guru.info(f"Rendering video from {renderer.global_step=}")
 
-    train_w2cs = train_dataset.get_w2cs().to(device)
-    avg_w2c = get_avg_w2c(train_w2cs)
-    # avg_w2c = train_w2cs[0]
-    train_c2ws = torch.linalg.inv(train_w2cs)
-    lookat = get_lookat(train_c2ws[:, :3, -1], train_c2ws[:, :3, 2])
-    up = torch.tensor([0.0, 0.0, 1.0], device=device)
     K = train_dataset.get_Ks()[0].to(device)
     img_wh = train_dataset.get_img_wh()
+    train_w2cs = train_dataset.get_w2cs().to(device)
 
-    # w2cs = cfg.trajectory.get_w2cs(
-    #     ref_w2c=(
-    #         avg_w2c
-    #         if cfg.trajectory.ref_t < 0
-    #         else train_w2cs[min(cfg.trajectory.ref_t, train_dataset.num_frames - 1)]
-    #     ),
-    #     lookat=lookat,
-    #     up=up,
-    # )
-    # ts = cfg.time.get_ts(
-    #     num_frames=renderer.num_frames,
-    #     traj_frames=cfg.trajectory.num_frames,
-    #     device=device,
-    # )
+    # select a keyframe
+    i = len(train_dataset.keyframe_idcs) // 2
+    tid = train_dataset.keyframe_idcs[i]
+    tracks_3d = train_dataset.get_tracks_3d(1000)[0].to(device)  # (N, T, 3)
+    avg_w2c = train_w2cs[tid]
 
-    num_frames = len(train_w2cs)
-    # w2cs = train_w2cs[1:2].repeat(num_frames, 1, 1)
-    w2cs = avg_w2c[None].repeat(num_frames, 1, 1)
-    ts = torch.arange(num_frames, device=device)
+    # move camera position back from the scene a bit
+    scene_center = tracks_3d.reshape(-1, 3).mean(dim=0)
+    lookat = scene_center - avg_w2c[:3, -1]
+    avg_w2c[:3, -1] -= 0.2 * lookat
+
+    # get the radius of the bounding sphere of training cameras
+    train_c2ws = torch.linalg.inv(train_w2cs)
+    rc_train_c2ws = torch.einsum("ij,njk->nik", torch.linalg.inv(avg_w2c), train_c2ws)
+    rc_pos = rc_train_c2ws[:, :3, -1]
+    rads = (rc_pos.amax(0) - rc_pos.amin(0)) * 1.2
+    print(f"{rads=}")
+    lookat = get_lookat(train_c2ws[:, :3, -1], train_c2ws[:, :3, 2])
+    up = torch.tensor([0.0, 0.0, 1.0], device=device)
+
+    w2cs = cfg.trajectory.get_w2cs(
+        ref_w2c=(
+            avg_w2c
+            if cfg.trajectory.ref_t < 0
+            else train_w2cs[min(cfg.trajectory.ref_t, train_dataset.num_frames - 1)]
+        ),
+        lookat=lookat,
+        up=up,
+        focal_length=K[0, 0].item(),
+        rads=rads,
+        num_frames=len(train_w2cs),
+        rots=0.5,
+    )
+    ts = cfg.time.get_ts(
+        num_frames=len(train_w2cs),
+        traj_frames=len(train_w2cs),
+        device=device,
+    )
+
+    # w2cs = avg_w2c[None].repeat(num_frames, 1, 1)
+    # ts = torch.arange(num_frames, device=device)
     assert len(w2cs) == len(ts)
 
     video = []
@@ -135,8 +151,7 @@ def main(cfg: VideoConfig):
             img = renderer.model.render(int(t.item()), w2c[None], K[None], img_wh)[
                 "img"
             ][0]
-        #  out_img = draw_tracks_2d(img, tracks_2d[:, i_min:i])
-        out_img = draw_tracks_2d_th(img, tracks_2d[:, i_min:i])
+        out_img = draw_tracks_2d(img, tracks_2d[:, i_min:i])
         video.append(out_img)
     video = np.stack(video, 0)
 
