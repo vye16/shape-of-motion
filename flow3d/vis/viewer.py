@@ -59,6 +59,9 @@ class DynamicViewer(Viewer):
 
             self._canonical_checkbox.on_update(_toggle_gui_playing)
 
+        self._render_track_checkbox = server.gui.add_checkbox("Render tracks", False)
+        self._render_track_checkbox.on_update(self.rerender)
+
         tabs = server.gui.add_tab_group()
         with tabs.add_tab("Render", Icon.CAMERA):
             self.render_tab_state = populate_render_tab(

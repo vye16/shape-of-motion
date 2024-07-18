@@ -4,16 +4,17 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor
 
 
-def process_davis(
+def launch_batch(
     device: int,
     root_dir: str,
     seq_name: str,
+    img_name: str = "images",
     depth_method: str = "aligned_depth_anything",
     intrins_method: str = "unidepth_intrins",
     out_name: str = "droid_recon",
     res: str = "480p",
 ):
-    image_dir = f"{root_dir}/JPEGImages/{res}/{seq_name}"
+    image_dir = f"{root_dir}/{img_name}/{res}/{seq_name}"
     depth_dir = f"{root_dir}/{depth_method}/{res}/{seq_name}"
     calib_path = f"{root_dir}/{intrins_method}/{res}/{seq_name}.json"
     out_path = f"{root_dir}/{out_name}/{seq_name}"
@@ -26,19 +27,27 @@ def process_davis(
 
 
 def main(args):
-    image_root = f"{args.root_dir}/JPEGImages/{args.res}"
+    if args.dataset == "davis":
+        args.img_name = "JPEGImages"
+        args.res = "480p"
+    else:
+        args.res = ""
+
+    image_root = f"{args.root_dir}/{args.img_name}/{args.res}"
     seq_names = os.listdir(image_root)
     if args.seq_names is not None:
         seq_names = args.seq_names
+
     print(f"Processing {len(seq_names)} sequences")
     with ProcessPoolExecutor(max_workers=len(args.devices)) as executor:
         for i, seq_name in enumerate(seq_names):
             device = args.devices[i % len(args.devices)]
             executor.submit(
-                process_davis,
+                launch_batch,
                 device,
                 args.root_dir,
                 seq_name,
+                args.img_name,
                 args.depth_method,
                 args.intrins_method,
                 args.out_name,
@@ -49,7 +58,11 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--devices", nargs="+", default=[0])
-    parser.add_argument("--root_dir", type=str, help="path to davis directory")
+    parser.add_argument(
+        "--dataset", type=str, choices=["davis", "custom"], help="dataset type"
+    )
+    parser.add_argument("--root_dir", type=str, help="path to dataset directory")
+    parser.add_argument("--img_name", type=str, default="images")
     parser.add_argument("--depth_method", type=str, default="aligned_depth_anything")
     parser.add_argument("--intrins_method", type=str, default="unidepth_intrins")
     parser.add_argument("--out_name", type=str, default="droid_recon")

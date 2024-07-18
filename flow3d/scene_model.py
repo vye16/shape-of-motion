@@ -60,21 +60,28 @@ class SceneModel(nn.Module):
         assert self.bg is not None
         return self.bg.params["means"], self.bg.get_quats()
 
-    def compute_transforms(self, ts: torch.Tensor) -> torch.Tensor:
+    def compute_transforms(
+        self, ts: torch.Tensor, inds: torch.Tensor | None = None
+    ) -> torch.Tensor:
         coefs = self.fg.get_coefs()  # (G, K)
+        if inds is not None:
+            coefs = coefs[inds]
         transfms = self.motion_bases.compute_transforms(ts, coefs)  # (G, B, 3, 4)
         return transfms
 
     def compute_poses_fg(
-        self, ts: torch.Tensor | None
+        self, ts: torch.Tensor | None, inds: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         :returns means: (G, B, 3), quats: (G, B, 4)
         """
         means = self.fg.params["means"]  # (G, 3)
         quats = self.fg.get_quats()  # (G, 4)
+        if inds is not None:
+            means = means[inds]
+            quats = quats[inds]
         if ts is not None:
-            transfms = self.compute_transforms(ts)  # (G, B, 3, 4)
+            transfms = self.compute_transforms(ts, inds)  # (G, B, 3, 4)
             means = torch.einsum(
                 "pnij,pj->pni",
                 transfms,

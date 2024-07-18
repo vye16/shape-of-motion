@@ -35,6 +35,8 @@ class DavisDataConfig:
     start: int = 0
     end: int = -1
     res: str = "480p"
+    image_type: str = "JPEGImages"
+    mask_type: str = "Annotations"
     depth_type: Literal[
         "aligned_depth_anything",
         "aligned_depth_anything_v2",
@@ -43,9 +45,38 @@ class DavisDataConfig:
         "unidepth_disp",
     ] = "aligned_depth_anything"
     camera_type: Literal["droid_recon"] = "droid_recon"
+    track_2d_type: Literal["bootstapir", "tapir"] = "bootstapir"
+    mask_erosion_radius: int = 3
     scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
     num_targets_per_frame: int = 4
     load_from_cache: bool = False
+
+
+@dataclass
+class CustomDataConfig:
+    seq_name: str
+    root_dir: str
+    start: int = 0
+    end: int = -1
+    res: str = ""
+    image_type: str = "images"
+    mask_type: str = "masks"
+    depth_type: Literal[
+        "aligned_depth_anything",
+        "aligned_depth_anything_v2",
+        "depth_anything",
+        "depth_anything_v2",
+        "unidepth_disp",
+    ] = "aligned_depth_anything"
+    camera_type: Literal["droid_recon"] = "droid_recon"
+    track_2d_type: Literal["bootstapir", "tapir"] = "bootstapir"
+    mask_erosion_radius: int = 7
+    scene_norm_dict: tyro.conf.Suppress[SceneNormDict | None] = None
+    num_targets_per_frame: int = 4
+    load_from_cache: bool = False
+    img_subdir: str = "JPEGImages"
+    mask_subdir: str = "Annotations"
+    img_ext: str = "jpg"
 
 
 class DavisDataset(BaseDataset):
@@ -56,6 +87,8 @@ class DavisDataset(BaseDataset):
         start: int = 0,
         end: int = -1,
         res: str = "480p",
+        image_type: str = "JPEGImages",
+        mask_type: str = "Annotations",
         depth_type: Literal[
             "aligned_depth_anything",
             "aligned_depth_anything_v2",
@@ -64,9 +97,14 @@ class DavisDataset(BaseDataset):
             "unidepth_disp",
         ] = "aligned_depth_anything",
         camera_type: Literal["droid_recon"] = "droid_recon",
+        track_2d_type: Literal["bootstapir", "tapir"] = "bootstapir",
+        mask_erosion_radius: int = 3,
         scene_norm_dict: SceneNormDict | None = None,
         num_targets_per_frame: int = 4,
         load_from_cache: bool = False,
+        img_subdir: str = "JPEGImages",
+        mask_subdir: str = "Annotations",
+        img_ext: str = "jpg",
         **_,
     ):
         super().__init__()
@@ -78,12 +116,15 @@ class DavisDataset(BaseDataset):
         self.num_targets_per_frame = num_targets_per_frame
         self.load_from_cache = load_from_cache
         self.has_validation = False
+        self.mask_erosion_radius = mask_erosion_radius
 
-        self.img_dir = f"{root_dir}/JPEGImages/{res}/{seq_name}"
+        self.img_dir = f"{root_dir}/{image_type}/{res}/{seq_name}"
+        self.img_ext = os.path.splitext(os.listdir(self.img_dir)[0])[1]
         self.depth_dir = f"{root_dir}/{depth_type}/{res}/{seq_name}"
-        self.mask_dir = f"{root_dir}/Annotations/{res}/{seq_name}"
-        self.tracks_dir = f"{root_dir}/2d_tracks/{res}/{seq_name}"
+        self.mask_dir = f"{root_dir}/{mask_type}/{res}/{seq_name}"
+        self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
+        #  self.cache_dir = f"datasets/davis/flow3d_preprocessed/{res}/{seq_name}"
         frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
 
         if end == -1:
@@ -111,7 +152,7 @@ class DavisDataset(BaseDataset):
         self.w2cs = w2cs[start:end]
         self.Ks = Ks[start:end]
         tmask = (tstamps >= start) & (tstamps < end)
-        self.tstamps = tstamps[tmask]
+        self.tstamps = tstamps[tmask] - start
         self.scale = 1
 
         if scene_norm_dict is None:
@@ -172,11 +213,12 @@ class DavisDataset(BaseDataset):
         return self.depths[index] / self.scale
 
     def load_image(self, index) -> torch.Tensor:
-        path = f"{self.img_dir}/{self.frame_names[index]}.jpg"
+        path = f"{self.img_dir}/{self.frame_names[index]}.{self.img_ext}"
         return torch.from_numpy(imageio.imread(path)).float() / 255.0
 
-    def load_mask(self, index, r: int = 3) -> torch.Tensor:
+    def load_mask(self, index) -> torch.Tensor:
         path = f"{self.mask_dir}/{self.frame_names[index]}.png"
+        r = self.mask_erosion_radius
         mask = imageio.imread(path)
         fg_mask = mask.reshape((*mask.shape[:2], -1)).max(axis=-1) > 0
         bg_mask = ~fg_mask
@@ -307,7 +349,7 @@ class DavisDataset(BaseDataset):
                 p2d = torch.einsum(
                     "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
                 )
-                p2d = p2d[:, :2] / p2d[:, 2:]
+                p2d = p2d[:, :2] / p2d[:, 2:].clamp(min=1e-6)
                 if len(p2d) < 1:
                     continue
                 xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()

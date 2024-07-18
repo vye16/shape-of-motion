@@ -1,18 +1,16 @@
 import sys
 from time import sleep
+from typing import Annotated, Union
+
 import torch
 import torch.nn.functional as F
 import tyro
-
-from typing import Annotated, Union
-from flow3d.data import (
-    get_train_val_datasets,
-    iPhoneDataConfig,
-    DavisDataConfig,
-)
-from flow3d.vis.utils import get_server
-from viser import transforms as vtf
 from loguru import logger as guru
+from tqdm import tqdm
+from viser import transforms as vtf
+
+from flow3d.data import DavisDataConfig, get_train_val_datasets, iPhoneDataConfig
+from flow3d.vis.utils import get_server
 
 
 def main(
@@ -53,7 +51,7 @@ def main(
     print(f"{grid.shape=} {depth[::r,::r].shape=}")
 
     all_points, all_colors = [], []
-    for i in range(T):
+    for i in tqdm(range(T)):
         img = dset.get_image(i)[::r, ::r]
         depth = dset.get_depth(i)[::r, ::r]
         mask = dset.get_mask(i)[::r, ::r]

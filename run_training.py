@@ -17,6 +17,7 @@ from flow3d.configs import LossesConfig, OptimizerConfig, SceneLRConfig
 from flow3d.data import (
     BaseDataset,
     DavisDataConfig,
+    CustomDataConfig,
     get_train_val_datasets,
     iPhoneDataConfig,
 )
@@ -56,6 +57,7 @@ class TrainConfig:
     data: (
         Annotated[iPhoneDataConfig, tyro.conf.subcommand(name="iphone")]
         | Annotated[DavisDataConfig, tyro.conf.subcommand(name="davis")]
+        | Annotated[CustomDataConfig, tyro.conf.subcommand(name="custom")]
     )
     lr: SceneLRConfig
     loss: LossesConfig
@@ -65,7 +67,7 @@ class TrainConfig:
     num_motion_bases: int = 10
     num_epochs: int = 500
     port: int | None = None
-    vis_debug: bool = True
+    vis_debug: bool = False 
     batch_size: int = 8
     num_dl_workers: int = 4
     validate_every: int = 50
@@ -93,6 +95,7 @@ def main(cfg: TrainConfig):
         train_dataset,
         device,
         ckpt_path,
+        vis=cfg.vis_debug,
         port=cfg.port,
     )
 
@@ -166,7 +169,8 @@ def initialize_and_checkpoint_model(
     train_dataset: BaseDataset,
     device: torch.device,
     ckpt_path: str,
-    port: int,
+    vis: bool = False,
+    port: int | None = None,
 ):
     if os.path.exists(ckpt_path):
         guru.info(f"model checkpoint exists at {ckpt_path}")
@@ -177,14 +181,16 @@ def initialize_and_checkpoint_model(
         cfg.num_fg,
         cfg.num_bg,
         cfg.num_motion_bases,
-        port,
+        vis=vis,
+        port=port,
     )
     # run initial optimization
     Ks = train_dataset.get_Ks().to(device)
     w2cs = train_dataset.get_w2cs().to(device)
     run_initial_optim(fg_params, motion_bases, tracks_3d, Ks, w2cs)
-    server = get_server(port=cfg.port)
-    vis_init_params(server, fg_params, motion_bases)
+    if vis and cfg.port is not None:
+        server = get_server(port=cfg.port)
+        vis_init_params(server, fg_params, motion_bases)
     model = SceneModel(Ks, w2cs, fg_params, motion_bases, bg_params)
 
     guru.info(f"Saving initialization to {ckpt_path}")
@@ -197,7 +203,8 @@ def init_model_from_tracks(
     num_fg: int,
     num_bg: int,
     num_motion_bases: int,
-    port: int,
+    vis: bool = False,
+    port: int | None = None,
 ):
     tracks_3d = TrackObservations(*train_dataset.get_tracks_3d(num_fg))
     print(
@@ -216,7 +223,7 @@ def init_model_from_tracks(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     motion_bases, motion_coefs, tracks_3d = init_motion_params_with_procrustes(
-        tracks_3d, num_motion_bases, rot_type, cano_t, port=port
+        tracks_3d, num_motion_bases, rot_type, cano_t, vis=vis, port=port
     )
     motion_bases = motion_bases.to(device)
 

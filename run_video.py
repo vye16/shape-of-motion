@@ -36,7 +36,8 @@ class BaseTrajectoryConfig:
     def get_w2cs(self, **kwargs) -> torch.Tensor:
         cfg_kwargs = asdict(self)
         _fn = cfg_kwargs.pop("_fn")
-        return _fn(**kwargs, **cfg_kwargs)
+        cfg_kwargs.update(kwargs)
+        return _fn(**cfg_kwargs)
 
 
 @dataclass
@@ -142,11 +143,12 @@ class VideoConfig:
         Annotated[ReplayTimeConfig, tyro.conf.subcommand(name="replay")]
         | Annotated[FixedTimeConfig, tyro.conf.subcommand(name="fixed")]
     )
-    fps: float = 60.0
+    fps: float = 15.0
+    port: int = 8890
 
 
 def main(cfg: VideoConfig):
-    train_dataset = get_train_val_datasets(cfg.data)[0]
+    train_dataset = get_train_val_datasets(cfg.data, load_val=False)[0]
     guru.info(f"Training dataset has {train_dataset.num_frames} frames")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -166,11 +168,17 @@ def main(cfg: VideoConfig):
 
     train_w2cs = train_dataset.get_w2cs().to(device)
     avg_w2c = get_avg_w2c(train_w2cs)
+    # avg_w2c = train_w2cs[0]
     train_c2ws = torch.linalg.inv(train_w2cs)
     lookat = get_lookat(train_c2ws[:, :3, -1], train_c2ws[:, :3, 2])
     up = torch.tensor([0.0, 0.0, 1.0], device=device)
     K = train_dataset.get_Ks()[0].to(device)
     img_wh = train_dataset.get_img_wh()
+
+    # get the radius of the bounding sphere of training cameras
+    rc_train_c2ws = torch.einsum("ij,njk->nik", torch.linalg.inv(avg_w2c), train_c2ws)
+    rc_pos = rc_train_c2ws[:, :3, -1]
+    rads = (rc_pos.amax(0) - rc_pos.amin(0)) * 1.25
 
     w2cs = cfg.trajectory.get_w2cs(
         ref_w2c=(
@@ -180,52 +188,59 @@ def main(cfg: VideoConfig):
         ),
         lookat=lookat,
         up=up,
+        focal_length=K[0, 0].item(),
+        rads=rads,
     )
     ts = cfg.time.get_ts(
         num_frames=renderer.num_frames,
         traj_frames=cfg.trajectory.num_frames,
         device=device,
     )
-    assert len(w2cs) == len(ts)
 
-    #  import viser.transforms as vt
+    import viser.transforms as vt
+    from flow3d.vis.utils import get_server
 
-    #  from flow3d.vis.utils import get_server
+    server = get_server(port=8890)
+    for i, train_w2c in enumerate(train_w2cs):
+        train_c2w = torch.linalg.inv(train_w2c).cpu().numpy()
+        server.scene.add_camera_frustum(
+            f"/train_camera/{i:03d}",
+            np.pi / 4,
+            1.0,
+            0.02,
+            (0, 0, 0),
+            wxyz=vt.SO3.from_matrix(train_c2w[:3, :3]).wxyz,
+            position=train_c2w[:3, -1],
+        )
+    for i, w2c in enumerate(w2cs):
+        c2w = torch.linalg.inv(w2c).cpu().numpy()
+        server.scene.add_camera_frustum(
+            f"/camera/{i:03d}",
+            np.pi / 4,
+            1.0,
+            0.02,
+            (255, 0, 0),
+            wxyz=vt.SO3.from_matrix(c2w[:3, :3]).wxyz,
+            position=c2w[:3, -1],
+        )
+        avg_c2w = torch.linalg.inv(avg_w2c).cpu().numpy()
+        server.scene.add_camera_frustum(
+            f"/ref_camera",
+            np.pi / 4,
+            1.0,
+            0.02,
+            (0, 0, 255),
+            wxyz=vt.SO3.from_matrix(avg_c2w[:3, :3]).wxyz,
+            position=avg_c2w[:3, -1],
+        )
+    import ipdb
 
-    #  server = get_server(port=30038)
-    #  for i, train_w2c in enumerate(train_w2cs):
-    #      train_c2w = torch.linalg.inv(train_w2c).cpu().numpy()
-    #      server.scene.add_camera_frustum(
-    #          f"/train_camera/{i:03d}",
-    #          np.pi / 4,
-    #          1.0,
-    #          0.002,
-    #          (0, 0, 0),
-    #          wxyz=vt.SO3.from_matrix(train_c2w[:3, :3]).wxyz,
-    #          position=train_c2w[:3, -1],
-    #      )
-    #  for i, w2c in enumerate(w2cs):
-    #      c2w = torch.linalg.inv(w2c).cpu().numpy()
-    #      server.scene.add_camera_frustum(
-    #          f"/camera/{i:03d}",
-    #          np.pi / 4,
-    #          1.0,
-    #          0.002,
-    #          (255, 0, 0),
-    #          wxyz=vt.SO3.from_matrix(c2w[:3, :3]).wxyz,
-    #          position=c2w[:3, -1],
-    #      )
-    #  avg_c2w = torch.linalg.inv(avg_w2c).cpu().numpy()
-    #  server.scene.add_camera_frustum(
-    #      f"/ref_camera",
-    #      np.pi / 4,
-    #      1.0,
-    #      0.03,
-    #      (0, 0, 255),
-    #      wxyz=vt.SO3.from_matrix(avg_c2w[:3, :3]).wxyz,
-    #      position=avg_c2w[:3, -1],
-    #  )
-    #  __import__("ipdb").set_trace()
+    ipdb.set_trace()
+
+    # num_frames = len(train_w2cs)
+    # w2cs = train_w2cs[:1].repeat(num_frames, 1, 1)
+    # ts = torch.arange(num_frames, device=device)
+    # assert len(w2cs) == len(ts)
 
     video = []
     for w2c, t in zip(tqdm(w2cs), ts):
