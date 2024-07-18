@@ -23,13 +23,6 @@ pip install -r requirements.txt
 pip install git+https://github.com/nerfstudio-project/gsplat.git
 ```
 
-## Development
-
-```
-cd .git
-ln -sf ../../.dev/pre-commit
-```
-
 ## Usage
 
 ### Preprocessing
