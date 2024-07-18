@@ -35,7 +35,7 @@ ln -sf ../../.dev/pre-commit
 ### Preprocessing
 
 We depend on the third-party libraries in `preproc` to generate depth maps, object masks, camera estimates, and 2D tracks.
-Please follow the guide in the (./preproc/README.md)[preprocessing README].
+Please follow the guide in the [preprocessing README](./preproc/README.md).
 
 ### Fitting to a Video
 
