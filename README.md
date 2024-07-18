@@ -37,9 +37,17 @@ We depend on the third-party libraries in `preproc` to generate monocular depth 
 ### Fitting to a Video
 
 ```
-python run_training.py --work-dir <OUTPUT> --data:davis --data.seq-name horsejump-low
+python run_training.py --work-dir <OUTPUT_DIR> --data:davis --data.seq-name horsejump-low
 ```
 
-## Evaluation
+## Evaluation on iPhone Dataset
+First, download our processed iPhone dataset from [this](todo) link. To train on a sequence, e.g., *paper-windmill*, run:
 
-### iPhone Dataset
+```
+python run_training.py --work-dir <OUTPUT_DIR> --port <PORT> --data:iphone --data.data-dir </path/to/paper-windmill/>
+```
+
+After optimization, the numerical result can be evaluated via:
+```
+PYTHONPATH='.' python scripts/evaluate_iphone.py --data_dir </path/to/paper-windmill/> --result_dir <OUTPUT_DIR> --seq_names paper-windmill  
+```
