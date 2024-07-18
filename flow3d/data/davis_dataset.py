@@ -124,6 +124,7 @@ class DavisDataset(BaseDataset):
         self.mask_dir = f"{root_dir}/{mask_type}/{res}/{seq_name}"
         self.tracks_dir = f"{root_dir}/{track_2d_type}/{res}/{seq_name}"
         self.cache_dir = f"{root_dir}/flow3d_preprocessed/{res}/{seq_name}"
+        #  self.cache_dir = f"datasets/davis/flow3d_preprocessed/{res}/{seq_name}"
         frame_names = [os.path.splitext(p)[0] for p in sorted(os.listdir(self.img_dir))]
 
         if end == -1:
@@ -348,7 +349,7 @@ class DavisDataset(BaseDataset):
                 p2d = torch.einsum(
                     "ij,jk,pk->pi", K, w2c[:3], F.pad(p3d, (0, 1), value=1.0)
                 )
-                p2d = p2d[:, :2] / p2d[:, 2:]
+                p2d = p2d[:, :2] / p2d[:, 2:].clamp(min=1e-6)
                 if len(p2d) < 1:
                     continue
                 xmin, xmax = p2d[:, 0].min().item(), p2d[:, 0].max().item()

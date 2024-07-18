@@ -71,15 +71,7 @@ def process_sequence(
         f"--out_raw_dir {mono_depth_dir} --out_aligned_dir {aligned_depth_dir} "
         f"--model {depth_model} --metric_dir {metric_depth_dir}"
     )
-    cmd = f"source /home/hangg/.anaconda3/bin/activate {our_env}; {mono_depth_cmd}"
-    print(cmd)
-    subprocess.call(cmd, shell=True, executable="/bin/bash")
-
-    slam_cmd = (
-        f"{dev_arg} python recon_with_depth.py --image_dir {img_dir} "
-        f"--calib {intrins_name}.json --depth_dir {aligned_depth_dir} --out_path {slam_path}"
-    )
-    cmd = f"source /home/hangg/.anaconda3/bin/activate {droid_env}; {slam_cmd}"
+    cmd = f"{source_pre} {our_env}; {mono_depth_cmd}"
     print(cmd)
     subprocess.call(cmd, shell=True, executable="/bin/bash")
 
