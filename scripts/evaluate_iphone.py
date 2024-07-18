@@ -401,10 +401,14 @@ if __name__ == "__main__":
         print(f"Evaluating {seq_name}")
         print("=========================================")
         data_dir = osp.join(args.data_dir, seq_name)
+        if not osp.exists(data_dir):
+            data_dir = args.data_dir
+        if not osp.exists(data_dir):
+            raise ValueError(f"Data directory {data_dir} not found.")
         result_dir = osp.join(args.result_dir, seq_name, "results/")
         if not osp.exists(result_dir):
             result_dir = osp.join(args.result_dir, "results/")
-        elif not osp.exists(result_dir):
+        if not osp.exists(result_dir):
             raise ValueError(f"Result directory {result_dir} not found.")
 
         with open(osp.join(data_dir, "splits/train.json")) as f:

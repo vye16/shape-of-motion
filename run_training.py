@@ -120,15 +120,21 @@ def main(cfg: TrainConfig):
     validator = None
     if (
         train_video_view is not None
-        and val_img_dataset is not None
-        and val_kpt_dataset is not None
+        or val_img_dataset is not None
+        or val_kpt_dataset is not None
     ):
         validator = Validator(
             model=trainer.model,
             device=device,
-            train_loader=DataLoader(train_video_view, batch_size=1),
-            val_img_loader=DataLoader(val_img_dataset, batch_size=1),
-            val_kpt_loader=DataLoader(val_kpt_dataset, batch_size=1),
+            train_loader=(
+                DataLoader(train_video_view, batch_size=1) if train_video_view else None
+            ),
+            val_img_loader=(
+                DataLoader(val_img_dataset, batch_size=1) if val_img_dataset else None
+            ),
+            val_kpt_loader=(
+                DataLoader(val_kpt_dataset, batch_size=1) if val_kpt_dataset else None
+            ),
             save_dir=cfg.work_dir,
         )
 
