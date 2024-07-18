@@ -129,7 +129,7 @@ def get_spiral_w2cs(
     lookat: torch.Tensor,
     up: torch.Tensor,
     num_frames: int,
-    rads: float,
+    rads: float | torch.Tensor,
     zrate: float,
     rots: int,
     **_,
@@ -139,6 +139,8 @@ def get_spiral_w2cs(
         0, 2 * torch.pi * rots, num_frames + 1, device=ref_w2c.device
     )[:-1]
     # Spiral curve in camera space. Starting at the origin.
+    if isinstance(rads, torch.Tensor):
+        rads = rads.reshape(-1, 3).to(ref_w2c.device)
     positions = (
         torch.stack(
             [
