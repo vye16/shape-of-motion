@@ -153,8 +153,6 @@ mask_dir = args.mask_dir
 frame_names = [
     os.path.basename(f) for f in sorted(glob.glob(os.path.join(folder_path, "*")))
 ]
-# data_dir = args.data_dir
-# out_dir = os.path.join(data_dir, "2d_tracks")
 out_dir = args.out_dir
 os.makedirs(out_dir, exist_ok=True)
 
