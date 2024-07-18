@@ -38,7 +38,7 @@ This GUI can be used for extracting frames from a video, and extracting video ob
 
 To finish preprocessing, run
 ```
-python process_custom.py --image-dirs [data_root]/images/** --gpus 0 1
+python process_custom.py --img-dirs [data_root]/images/** --gpus 0 1
 ```
 
 The resulting file structure should be as follows:
@@ -46,7 +46,7 @@ The resulting file structure should be as follows:
 - data_root
     '- images
     |   - ...
-    '- masks 
+    '- masks
     |   - ...
     '- unidepth_disp
     |   - ...
@@ -63,3 +63,14 @@ The resulting file structure should be as follows:
 ```
 
 Now you're ready to run the main optimization!
+
+### Individual launch scripts
+If you'd like to run any part of the preprocessing separately, we've included the launch scripts `launch_depth.py`, `launch_metric_depth.py`, `launch_slam.py`, and `launch_tracks.py` for your convenience. Their usage is as follows:
+
+```
+python launch_depth.py --img-dirs [data_root]/images/** --gpus 0 1 ...
+```
+and so on for the others.
+
+### A note on TAPIR
+By default, we use the pytorch implementation of TAPIR in `tapnet_torch`. However, this is slightly slower than the Jax jitted version, in the `tapnet` submodule. We've included the

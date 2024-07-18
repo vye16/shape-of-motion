@@ -9,39 +9,6 @@ from tqdm import tqdm
 from unidepth.models import UniDepthV1
 
 
-def write_disp(path, disp, rescale: bool, bits: int = 2):
-    """
-    Write disparity to png file.
-    :param path (str): filepath without extension
-    :param depth (array): depth
-    """
-    assert bits in [1, 2], "Unsupported bit depth."
-
-    if not np.isfinite(disp).all():
-        disp = np.nan_to_num(disp, nan=0.0, posinf=0.0, neginf=0.0)
-        print("WARNING: Non-finite depth values present")
-
-    max_val = (2 ** (8 * bits)) - 1
-    dtype = "uint8" if bits == 1 else "uint16"
-
-    if rescale:
-        disp_min = disp.min()
-        disp_max = disp.max()
-
-        if disp_max - disp_min > np.finfo("float").eps:
-            out = (disp - disp_min) / (disp_max - disp_min)
-        else:
-            out = np.zeros(disp.shape, dtype=disp.dtype)
-
-    out = disp * max_val
-    print(
-        f"{path} {disp.min()=}, {disp.max()=} output min: {out.min()} max: {out.max()}"
-    )
-    out = out.astype(dtype).squeeze()
-
-    iio.imwrite(path, out)
-
-
 def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
     img_files = sorted(os.listdir(img_dir))
     if not intrins_file.endswith(".json"):
@@ -93,6 +60,39 @@ def run_model(model, rgb: np.ndarray, intrinsics: np.ndarray | None = None):
     predictions = model.infer(rgb_torch, intrinsics_torch)
     out_dict = {k: v.squeeze().cpu().numpy() for k, v in predictions.items()}
     return out_dict
+
+
+def write_disp(path, disp, rescale: bool, bits: int = 2):
+    """
+    Write disparity to png file.
+    :param path (str): filepath without extension
+    :param depth (array): depth
+    """
+    assert bits in [1, 2], "Unsupported bit depth."
+
+    if not np.isfinite(disp).all():
+        disp = np.nan_to_num(disp, nan=0.0, posinf=0.0, neginf=0.0)
+        print("WARNING: Non-finite depth values present")
+
+    max_val = (2 ** (8 * bits)) - 1
+    dtype = "uint8" if bits == 1 else "uint16"
+
+    if rescale:
+        disp_min = disp.min()
+        disp_max = disp.max()
+
+        if disp_max - disp_min > np.finfo("float").eps:
+            out = (disp - disp_min) / (disp_max - disp_min)
+        else:
+            out = np.zeros(disp.shape, dtype=disp.dtype)
+
+    out = disp * max_val
+    print(
+        f"{path} {disp.min()=}, {disp.max()=} output min: {out.min()} max: {out.max()}"
+    )
+    out = out.astype(dtype).squeeze()
+
+    iio.imwrite(path, out)
 
 
 if __name__ == "__main__":

@@ -52,18 +52,18 @@ def preproc_image(image, calib):
     return image, (h0, w0), (h1, w1)
 
 
-def image_stream(image_dir, calib_path, stride, depth_dir: str | None = None):
+def image_stream(img_dir, calib_path, stride, depth_dir: str | None = None):
     """image generator"""
 
     with open(calib_path, "r") as f:
         calib_dict = json.load(f)
 
-    img_path_list = sorted(os.listdir(image_dir))[::stride]
+    img_path_list = sorted(os.listdir(img_dir))[::stride]
 
     # give all images the same calibration
     calibs = torch.tensor([calib_dict[os.path.splitext(im)[0]] for im in img_path_list])
     calib = calibs.mean(dim=0)
-    image = cv2.imread(os.path.join(image_dir, img_path_list[0]))
+    image = cv2.imread(os.path.join(img_dir, img_path_list[0]))
     image, (H0, W0), (H1, W1) = preproc_image(image, calib)
 
     fx, fy, cx, cy = calib.tolist()[:4]
@@ -73,7 +73,7 @@ def image_stream(image_dir, calib_path, stride, depth_dir: str | None = None):
 
     for t, imfile in enumerate(img_path_list):
         imname = os.path.splitext(imfile)[0]
-        image = cv2.imread(os.path.join(image_dir, imfile))
+        image = cv2.imread(os.path.join(img_dir, imfile))
         image, (h0, w0), (h1, w1) = preproc_image(image, calib)
         assert h0 == H0 and w0 == W0 and h1 == H1 and w1 == W1
         image = torch.as_tensor(image).permute(2, 0, 1)
@@ -178,7 +178,7 @@ def save_reconstruction(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image_dir", type=str, help="path to image directory")
+    parser.add_argument("--img_dir", type=str, help="path to image directory")
     parser.add_argument(
         "--depth_dir", type=str, default=None, help="path to depth directory"
     )
@@ -247,7 +247,7 @@ if __name__ == "__main__":
 
     tstamps = []
     for t, image, intrinsics, depth in tqdm(
-        image_stream(args.image_dir, args.calib, args.stride, depth_dir=args.depth_dir)
+        image_stream(args.img_dir, args.calib, args.stride, depth_dir=args.depth_dir)
     ):
         if t < args.t0:
             continue
@@ -262,7 +262,7 @@ if __name__ == "__main__":
         # print(f"{t=} {image.shape=} {depth.shape if depth is not None else None}")
         droid.track(t, image, depth=depth, intrinsics=intrinsics)
 
-    traj_est = droid.terminate(image_stream(args.image_dir, args.calib, args.stride))
+    traj_est = droid.terminate(image_stream(args.img_dir, args.calib, args.stride))
 
     if args.out_path is not None:
         save_reconstruction(droid, traj_est, args.out_path)
