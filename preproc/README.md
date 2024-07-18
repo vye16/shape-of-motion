@@ -73,4 +73,4 @@ python launch_depth.py --img-dirs [data_root]/images/** --gpus 0 1 ...
 and so on for the others.
 
 ### A note on TAPIR
-By default, we use the pytorch implementation of TAPIR in `tapnet_torch`. This is slightly slower than the Jax jitted version, in the `tapnet` submodule. We've included the Jax version of the script `compute_tracks_jax.py` in case you want to use and install `tapnet` and the Jax dependencies. Please refer to the [TAPNet readme](./tapnet/README.md) for those installation instructions. 
+By default, we use the pytorch implementation of TAPIR in `tapnet_torch`. This is slightly slower than the Jax jitted version, in the `tapnet` submodule. We've included the Jax version of the script `compute_tracks_jax.py` in case you want to use and install `tapnet` and the Jax dependencies. Please refer to the [TAPNet readme](https://github.com/google-deepmind/tapnet) for those installation instructions. 
