@@ -89,7 +89,11 @@ def main(cfg: TrainConfig):
     # if checkpoint exists
     ckpt_path = f"{cfg.work_dir}/checkpoints/last.ckpt"
     initialize_and_checkpoint_model(
-        cfg, train_dataset, device, ckpt_path, port=cfg.port,
+        cfg,
+        train_dataset,
+        device,
+        ckpt_path,
+        port=cfg.port,
     )
 
     trainer, start_epoch = Trainer.init_from_checkpoint(
@@ -113,15 +117,21 @@ def main(cfg: TrainConfig):
     validator = None
     if (
         train_video_view is not None
-        and val_img_dataset is not None
-        and val_kpt_dataset is not None
+        or val_img_dataset is not None
+        or val_kpt_dataset is not None
     ):
         validator = Validator(
             model=trainer.model,
             device=device,
-            train_loader=DataLoader(train_video_view, batch_size=1),
-            val_img_loader=DataLoader(val_img_dataset, batch_size=1),
-            val_kpt_loader=DataLoader(val_kpt_dataset, batch_size=1),
+            train_loader=(
+                DataLoader(train_video_view, batch_size=1) if train_video_view else None
+            ),
+            val_img_loader=(
+                DataLoader(val_img_dataset, batch_size=1) if val_img_dataset else None
+            ),
+            val_kpt_loader=(
+                DataLoader(val_kpt_dataset, batch_size=1) if val_kpt_dataset else None
+            ),
             save_dir=cfg.work_dir,
         )
 
@@ -163,7 +173,11 @@ def initialize_and_checkpoint_model(
         return
 
     fg_params, motion_bases, bg_params, tracks_3d = init_model_from_tracks(
-        train_dataset, cfg.num_fg, cfg.num_bg, cfg.num_motion_bases, port, 
+        train_dataset,
+        cfg.num_fg,
+        cfg.num_bg,
+        cfg.num_motion_bases,
+        port,
     )
     # run initial optimization
     Ks = train_dataset.get_Ks().to(device)

@@ -309,5 +309,5 @@ class PCK(Metric):
         """Compute PCK over state."""
         return (
             torch.tensor(self.correct, device=self.device)
-            / torch.tensor(self.total, device=self.device)
+            / torch.clamp(torch.tensor(self.total, device=self.device), min=1e-8)
         ).mean()
