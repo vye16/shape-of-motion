@@ -17,6 +17,7 @@ from flow3d.trajectories import get_avg_w2c, get_lookat
 from flow3d.vis.utils import (
     draw_keypoints_cv2,
     draw_tracks_2d,
+    draw_tracks_2d_th,
     get_server,
     make_video_divisble,
 )
@@ -134,7 +135,8 @@ def main(cfg: VideoConfig):
             img = renderer.model.render(int(t.item()), w2c[None], K[None], img_wh)[
                 "img"
             ][0]
-        out_img = draw_tracks_2d(img, tracks_2d[:, i_min:i])
+        #  out_img = draw_tracks_2d(img, tracks_2d[:, i_min:i])
+        out_img = draw_tracks_2d_th(img, tracks_2d[:, i_min:i])
         video.append(out_img)
     video = np.stack(video, 0)
 
