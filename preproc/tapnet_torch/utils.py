@@ -16,11 +16,11 @@
 """Pytorch model utilities."""
 
 from typing import Any, Sequence, Union
-from einshape.src import abstract_ops
-from einshape.src import backend
+
 import numpy as np
 import torch
 import torch.nn.functional as F
+from einshape.src import abstract_ops, backend
 
 
 def bilinear(x: torch.Tensor, resolution: tuple[int, int]) -> torch.Tensor:

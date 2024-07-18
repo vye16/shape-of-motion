@@ -19,11 +19,10 @@ import functools
 from typing import Any, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
-from . import nets
-from . import utils
+from . import nets, utils
 
 
 class FeatureGrids(NamedTuple):

@@ -6,9 +6,7 @@ import imageio
 import mediapy as media
 import numpy as np
 import torch
-
-from tapnet_torch import tapir_model
-from tapnet_torch import transforms
+from tapnet_torch import tapir_model, transforms
 from tqdm import tqdm
 
 
