@@ -1,5 +1,5 @@
 # Shape of Motion: 4D Reconstruction from a Single Video
-**[Project Page](TODO) | [Arxiv](TODO)**
+**[Project Page](https://shape-of-motion.github.io/) | [Arxiv](https://arxiv.org/abs/2407.13764)**
 
 [Qianqian Wang](https://qianqianwang68.github.io/)<sup>1,2</sup>*, [Vickie Ye](https://people.eecs.berkeley.edu/~vye/)<sup>1</sup>\*, [Hang Gao](https://hangg7.com/)<sup>1</sup>\*, [Jake Austin](https://www.linkedin.com/in/jakeaustin4701)<sup>1</sup>, [Zhengqi Li](https://zhengqili.github.io/)<sup>2</sup>, [Angjoo Kanazawa](https://people.eecs.berkeley.edu/~kanazawa/)<sup>1</sup>
 
@@ -21,13 +21,6 @@ i.e., replacing `cu122` and `cu12` with your CUDA version.
 ```
 pip install -r requirements.txt
 pip install git+https://github.com/nerfstudio-project/gsplat.git
-```
-
-## Development
-
-```
-cd .git
-ln -sf ../../.dev/pre-commit
 ```
 
 ## Usage
@@ -61,7 +54,7 @@ PYTHONPATH='.' python scripts/evaluate_iphone.py --data_dir </path/to/paper-wind
 @inproceedings{som2024,
   title     = {Shape of Motion: 4D Reconstruction from a Single Video},
   author    = {Wang, Qianqian and Ye, Vickie and Gao, Hang and Austin, Jake and Li, Zhengqi and Kanazawa, Angjoo},
-  booktitle = {arxiv:TODO},
+  journal   = {arXiv preprint arXiv:2407.13764},
   year      = {2024}
 }
 ```
