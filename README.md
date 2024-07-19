@@ -54,7 +54,7 @@ PYTHONPATH='.' python scripts/evaluate_iphone.py --data_dir </path/to/paper-wind
 @inproceedings{som2024,
   title     = {Shape of Motion: 4D Reconstruction from a Single Video},
   author    = {Wang, Qianqian and Ye, Vickie and Gao, Hang and Austin, Jake and Li, Zhengqi and Kanazawa, Angjoo},
-  booktitle = {arxiv:TODO},
+  journal   = {arXiv preprint arXiv:2407.13764},
   year      = {2024}
 }
 ```
