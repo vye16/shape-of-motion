@@ -211,46 +211,52 @@ prediction, _ = model_predict_apply(
 )
 
 for t in tqdm(range(num_frames), desc="frames"):
+    name_t = os.path.splitext(frame_names[t])[0]
+    file_matches = glob.glob(f"{out_dir}/{name_t}_*.npy")
+    if len(file_matches) == num_frames:
+        print(f"Already computed tracks with query {t=} {name_t=}")
+        continue
+
     all_points = np.stack([t * np.ones_like(y), y_resize, x_resize], axis=-1)
     mask = masks[t]
     in_mask = mask[y, x] > 0.5
     all_points_t = all_points[in_mask]
     print(f"{all_points.shape=} {all_points_t.shape=} {t=}")
     outputs = []
-    for points in tqdm(
-        np.array_split(
-            all_points_t, axis=0, indices_or_sections=len(all_points_t) // 128
-        ),
-        leave=False,
-        desc="points",
-    ):
-        points = points.astype(np.float32)[None]  # Add batch dimension
-        # print(f"{points.shape=}")
-        prediction, _ = model_predict_apply(
-            frames=frames,
-            points=points,
-            feature_grids=feature_grids,
-        )
-        prediction = tree.map_structure(lambda x: np.array(x[0]), prediction)
-        track, occlusion, expected_dist = (
-            prediction["tracks"],
-            prediction["occlusion"],
-            prediction["expected_dist"],
-        )
-        track = transforms.convert_grid_coordinates(
-            track, (resize_width - 1, resize_height - 1), (width - 1, height - 1)
-        )
-        outputs.append(
-            np.concatenate(
-                [track, occlusion[..., None], expected_dist[..., None]], axis=-1
+    if len(all_points_t) > 0:
+        num_chunks = max(1, len(all_points_t) // 128)
+        for points in tqdm(
+            np.array_split(all_points_t, axis=0, indices_or_sections=num_chunks),
+            leave=False,
+            desc="points",
+        ):
+            points = points.astype(np.float32)[None]  # Add batch dimension
+            prediction, _ = model_predict_apply(
+                frames=frames,
+                points=points,
+                feature_grids=feature_grids,
             )
-        )
+            prediction = tree.map_structure(lambda x: np.array(x[0]), prediction)
+            track, occlusion, expected_dist = (
+                prediction["tracks"],
+                prediction["occlusion"],
+                prediction["expected_dist"],
+            )
+            track = transforms.convert_grid_coordinates(
+                track, (resize_width - 1, resize_height - 1), (width - 1, height - 1)
+            )
+            outputs.append(
+                np.concatenate(
+                    [track, occlusion[..., None], expected_dist[..., None]], axis=-1
+                )
+            )
+        outputs = np.concatenate(outputs, axis=0)
+    else:
+        outputs = np.zeros((0, num_frames, 4), dtype=np.float32)
 
-    outputs = np.concatenate(outputs, axis=0)
     for j in range(num_frames):
         if j == t:
             original_query_points = np.stack([x[in_mask], y[in_mask]], axis=-1)
             outputs[:, j, :2] = original_query_points
-        name_t = os.path.splitext(frame_names[t])[0]
         name_j = os.path.splitext(frame_names[j])[0]
         np.save(f"{out_dir}/{name_t}_{name_j}.npy", outputs[:, j])

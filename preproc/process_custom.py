@@ -72,7 +72,7 @@ def process_sequence(
     subprocess.call(mono_depth_cmd, shell=True, executable="/bin/bash")
 
     slam_cmd = (
-        f"{dev_arg} python recon_with_depth.py --image_dir {img_dir} "
+        f"{dev_arg} python recon_with_depth.py --img_dir {img_dir} "
         f"--calib {intrins_name}.json --depth_dir {aligned_depth_dir} --out_path {slam_path}"
     )
     print(slam_cmd)
