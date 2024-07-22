@@ -12,6 +12,8 @@
 ## Installation
 
 ```
+git clone --recurse-submodules https://github.com/vye16/shape-of-motion
+cd shape-of-motion/
 conda create -n som python=3.10
 conda activate som
 ```
@@ -19,6 +21,7 @@ conda activate som
 Update `requirements.txt` with correct CUDA version for PyTorch and cuUML, 
 i.e., replacing `cu122` and `cu12` with your CUDA version. 
 ```
+
 pip install -r requirements.txt
 pip install git+https://github.com/nerfstudio-project/gsplat.git
 ```
