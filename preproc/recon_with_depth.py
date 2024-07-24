@@ -79,8 +79,8 @@ def image_stream(img_dir, calib_path, stride, depth_dir: str | None = None):
         image = torch.as_tensor(image).permute(2, 0, 1)
 
         if depth_dir is not None:
-            depth_path = f"{depth_dir}/{imname}.png"
-            depth = iio.imread(depth_path) / 65535.0
+            depth_path = f"{depth_dir}/{imname}.npy"
+            depth = np.load(depth_path)
             depth, (dh0, dw0), (dh1, dw1) = preproc_image(depth, calib)
             assert dh0 == h0 and dw0 == w0 and dh1 == h1 and dw1 == w1
             depth = torch.as_tensor(depth).float()

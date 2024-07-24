@@ -230,12 +230,10 @@ class CasualDataset(BaseDataset):
         return torch.from_numpy(out_mask).float()
 
     def load_depth(self, index) -> torch.Tensor:
-        path = f"{self.depth_dir}/{self.frame_names[index]}.png"
-        disp = imageio.imread(path)
-        if disp.dtype == np.uint16:
-            disp = disp.astype(np.float32) / UINT16_MAX
+        path = f"{self.depth_dir}/{self.frame_names[index]}.npy"
+        disp = np.load(path)
         depth = 1.0 / np.clip(disp, a_min=1e-6, a_max=1e6)
-        depth = torch.from_numpy(depth)
+        depth = torch.from_numpy(depth).float()
         depth = median_filter_2d(depth[None, None], 11, 1)[0, 0]
         return depth
 

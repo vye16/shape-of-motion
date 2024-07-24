@@ -102,10 +102,12 @@ def align_monodepth_with_metric_depth(
         return
 
     for f in tqdm(img_files):
-        metric_path = osp.join(metric_depth_dir, f)
-        mono_path = osp.join(input_monodepth_dir, f)
+        imname = os.path.splitext(f)[0]
+        metric_path = osp.join(metric_depth_dir, imname + ".npy")
+        mono_path = osp.join(input_monodepth_dir, imname + ".png")
+
         mono_disp_map = iio.imread(mono_path) / UINT16_MAX
-        metric_disp_map = iio.imread(metric_path) / UINT16_MAX
+        metric_disp_map = np.load(metric_path)
         ms_colmap_disp = metric_disp_map - np.median(metric_disp_map) + 1e-8
         ms_mono_disp = mono_disp_map - np.median(mono_disp_map) + 1e-8
 
@@ -117,9 +119,8 @@ def align_monodepth_with_metric_depth(
         min_thre = min(1e-6, np.quantile(aligned_disp, 0.01))
         # set depth values that are too small to invalid (0)
         aligned_disp[aligned_disp < min_thre] = 0.0
-        aligned_disp_uint16 = (aligned_disp * UINT16_MAX).astype(np.uint16)
-        out_file = osp.join(output_monodepth_dir, f)
-        iio.imwrite(out_file, aligned_disp_uint16)
+        out_file = osp.join(output_monodepth_dir, imname + ".npy")
+        np.save(out_file, aligned_disp)
 
 
 def align_monodepth_with_colmap(
