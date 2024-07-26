@@ -163,7 +163,9 @@ class PromptGUI(object):
         assert self.tracker is not None
         self.tracker.clear_memory()
 
-        images = [iio.imread(p) for p in self.img_paths]
+        # read images and drop the alpha channel
+        images = [iio.imread(p)[:, :, :3] for p in self.img_paths]
+        
         # binary masks
         self.index_masks_all = track_masks(
             self.tracker, images, idx_mask, self.frame_index
