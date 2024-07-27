@@ -4,7 +4,7 @@ pip install -r requirements_extra.txt
 # install droid-slam
 echo "Installing DROID-SLAM..."
 cd DROID-SLAM
-pip install .
+python setup.py install
 cd ..
 
 # install unidepth
