@@ -95,7 +95,7 @@ class PromptGUI(object):
         self.clear_points()
         self._clear_image()
         self.frame_index = i
-        image = iio.imread(self.img_paths[i])
+        image = iio.imread(self.img_paths[i])[:, :, :3]
         self.image = image
         return image
 
