@@ -18,8 +18,8 @@ conda create -n som python=3.10
 conda activate som
 ```
 
-Update `requirements.txt` with correct CUDA version for PyTorch and cuUML, 
-i.e., replacing `cu122` and `cu12` with your CUDA version. 
+Update `requirements.txt` with correct CUDA version for PyTorch and cuUML,
+i.e., replacing `cu122` and `cu12` with your CUDA version.
 ```
 
 pip install -r requirements.txt
@@ -35,20 +35,30 @@ Please follow the guide in the [preprocessing README](./preproc/README.md).
 
 ### Fitting to a Video
 
-```
-python run_training.py --work-dir <OUTPUT_DIR> --data:davis --data.seq-name horsejump-low
+```python
+python run_training.py \
+  --work-dir <OUTPUT_DIR> \
+  data:davis \
+  --data.seq-name horsejump-low
 ```
 
 ## Evaluation on iPhone Dataset
 First, download our processed iPhone dataset from [this](https://drive.google.com/drive/folders/1xJaFS_3027crk7u36cue7BseAX80abRe?usp=sharing) link. To train on a sequence, e.g., *paper-windmill*, run:
 
-```
-python run_training.py --work-dir <OUTPUT_DIR> --port <PORT> --data:iphone --data.data-dir </path/to/paper-windmill/>
+```python
+python run_training.py \
+  --work-dir <OUTPUT_DIR> \
+  --port <PORT> \
+  data:iphone \
+  --data.data-dir </path/to/paper-windmill/>
 ```
 
 After optimization, the numerical result can be evaluated via:
 ```
-PYTHONPATH='.' python scripts/evaluate_iphone.py --data_dir </path/to/paper-windmill/> --result_dir <OUTPUT_DIR> --seq_names paper-windmill  
+PYTHONPATH='.' python scripts/evaluate_iphone.py \
+  --data_dir </path/to/paper-windmill/> \
+  --result_dir <OUTPUT_DIR> \
+  --seq_names paper-windmill
 ```
 
 
