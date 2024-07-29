@@ -334,7 +334,7 @@ def run_initial_optim(
             masked_l1_loss(
                 pred_2d,
                 gt_2d,
-                (tracks_3d.invisibles.float() * tracks_3d.confidences)[..., None],
+                (tracks_3d.visibles.float() * tracks_3d.confidences)[..., None],
                 quantile=0.95,
             )
             / Ks[0, 0, 0]
