@@ -200,7 +200,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--filter_thresh",
         type=float,
-        default=0.8,
+        default=2.4,
         help="how much motion before considering new keyframe",
     )
     parser.add_argument("--warmup", type=int, default=8, help="number of warmup frames")
