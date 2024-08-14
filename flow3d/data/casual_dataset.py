@@ -210,7 +210,7 @@ class CasualDataset(BaseDataset):
 
     def load_image(self, index) -> torch.Tensor:
         path = f"{self.img_dir}/{self.frame_names[index]}{self.img_ext}"
-        return torch.from_numpy(imageio.imread(path)).float() / 255.0
+        return torch.from_numpy(imageio.imread(path)[:, :, :3]).float() / 255.0
 
     def load_mask(self, index) -> torch.Tensor:
         path = f"{self.mask_dir}/{self.frame_names[index]}.png"

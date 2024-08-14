@@ -20,7 +20,7 @@ def init_sam_model(checkpoint_dir: str, sam_model_type: str, device) -> SamPredi
 
 
 def init_tracker(checkpoint_dir, device) -> BaseTracker:
-    checkpoints = glob.glob(f"{checkpoint_dir}/*XMem*.pth")
+    checkpoints = glob.glob(f"{checkpoint_dir}/saves/*XMem*.pth")
     if len(checkpoints) == 0:
         raise ValueError(f"No XMem checkpoints found in {checkpoint_dir}")
     checkpoints = sorted(checkpoints)
