@@ -32,7 +32,7 @@ def run_model_inference(img_dir: str, depth_dir: str, intrins_file: str):
     for img_file in (bar := tqdm(img_files)):
         img_name = os.path.splitext(img_file)[0]
         out_path = f"{depth_dir}/{img_name}.npy"
-        img = iio.imread(f"{img_dir}/{img_file}")
+        img = iio.imread(f"{img_dir}/{img_file}")[:, :, :3]
         pred_dict = run_model(model, img)
         depth = pred_dict["depth"]
         disp = 1.0 / np.clip(depth, a_min=1e-6, a_max=1e6)

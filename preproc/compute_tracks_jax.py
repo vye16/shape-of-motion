@@ -137,7 +137,7 @@ def sample_random_points(frame_max_idx, height, width, num_points):
 
 def read_video(folder_path):
     frame_paths = sorted(glob.glob(os.path.join(folder_path, "*")))
-    video = np.stack([imageio.imread(frame_path) for frame_path in frame_paths])
+    video = np.stack([imageio.imread(frame_path)[:, :, :3] for frame_path in frame_paths])
     print(f"{video.shape=} {video.dtype=} {video.min()=} {video.max()=}")
     video = media._VideoArray(video)
     return video
