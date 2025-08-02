@@ -572,23 +572,32 @@ class Trainer:
         for _current_xys, _current_radii, _current_img_wh in zip(
             self._batched_xys, self._batched_radii, self._batched_img_wh
         ):
-            sel = _current_radii > 0
-            gidcs = torch.where(sel)[1]
-            # normalize grads to [-1, 1] screen space
-            xys_grad = _current_xys.grad.clone()
-            xys_grad[..., 0] *= _current_img_wh[0] / 2.0 * batch_size
-            xys_grad[..., 1] *= _current_img_wh[1] / 2.0 * batch_size
-            self.running_stats["xys_grad_norm_acc"].index_add_(
-                0, gidcs, xys_grad[sel].norm(dim=-1)
-            )
-            self.running_stats["vis_count"].index_add_(
-                0, gidcs, torch.ones_like(gidcs, dtype=torch.int64)
-            )
-            max_radii = torch.maximum(
-                self.running_stats["max_radii"].index_select(0, gidcs),
-                _current_radii[sel] / max(_current_img_wh),
-            )
-            self.running_stats["max_radii"].index_put((gidcs,), max_radii)
+            # Each element in batch is processed individually
+            sel = (_current_radii > 0).all(dim=-1)
+            for b in range(sel.shape[0]):
+                sel_b = sel[b]
+                # Skip if no valid radii
+                if sel_b.sum() == 0:
+                    continue
+
+                gidcs = torch.where(sel_b)[0]
+                # normalize grads to [-1, 1] screen space
+                xys_grad = _current_xys.grad[b].clone()
+
+                xys_grad[..., 0] *= _current_img_wh[0] / 2.0 * batch_size
+                xys_grad[..., 1] *= _current_img_wh[1] / 2.0 * batch_size
+
+                self.running_stats["xys_grad_norm_acc"].index_add_(
+                    0, gidcs, xys_grad[sel_b].norm(dim=-1)
+                )
+                self.running_stats["vis_count"].index_add_(
+                    0, gidcs, torch.ones_like(gidcs, dtype=torch.int64)
+                )
+                max_radii = torch.maximum(
+                    self.running_stats["max_radii"].index_select(0, gidcs),
+                    _current_radii[b][sel_b].max(dim=-1)[0] / max(_current_img_wh),
+                )
+                self.running_stats["max_radii"].index_put((gidcs,), max_radii)
         return True
 
     @torch.no_grad()
